@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}规范文档 · {{ site_name }}{% endblock %}
+{% block h1 %}规范文档管理（RAG 知识库）{% endblock %}
+{% block content %}
+
+<div class="grid g2 mb">
+  <div class="card">
+    <h3>上传文档（.txt / .md）</h3>
+    <form id="upform" onsubmit="return upload(event)">
+      <label>标题</label><input name="title" placeholder="厂区安全作业规范">
+      <label>标签</label><input name="tags" placeholder="安全,车间">
+      <label>文件</label><input name="file" type="file" accept=".txt,.md,.csv,.json">
+      <div class="mt"><button class="btn primary">上传并建立索引</button></div>
+    </form>
+  </div>
+  <div class="card">
+    <h3>直接粘贴条款</h3>
+    <div id="pasteform">
+      <label>标题</label><input name="title">
+      <label>标签</label><input name="tags">
+      <label>正文</label><textarea name="content" rows="6" placeholder="第 3.2 条 进入生产区域必须佩戴安全帽…"></textarea>
+      <div class="mt"><button class="btn primary" onclick="pasteDoc()">保存并建立索引</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb">
+  <h3>检索测试</h3>
+  <div class="flex">
+    <input id="q" placeholder="输入判定关键词，例如：未戴安全帽" style="flex:1">
+    <button class="btn" onclick="search()">检索</button>
+  </div>
+  <div id="sres" class="mt"></div>
+  <div class="hint">检索使用本机 TF-IDF（中文 2-gram 分词），无需向量数据库；任务启动时会自动把命中的条款注入大模型提示词。</div>
+</div>
+
+<div class="card">
+  <h3>文档列表</h3>
+  <table>
+    <thead><tr><th>ID</th><th>标题</th><th>文件名</th><th>标签</th><th>字数</th><th>索引片段</th><th>时间</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for d in items %}
+    <tr>
+      <td>{{ d.id }}</td><td>{{ d.title }}</td><td class="muted">{{ d.filename or '-' }}</td>
+      <td class="muted">{{ d.tags }}</td><td>{{ d.size }}</td><td>{{ d.chunk_count }}</td>
+      <td class="nowrap muted">{{ d.created_at }}</td>
+      <td class="nowrap">
+        <button class="btn sm" onclick="view({{ d.id }})">查看</button>
+        <button class="btn sm danger" onclick="confirmDo('确认删除《{{ d.title }}》？', () => del({{ d.id }}))">删除</button>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="8" class="muted">还没有规范文档</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card mt" id="viewbox" style="display:none">
+  <h3>文档内容 <span class="muted" id="vtitle"></span>
+    <button class="btn sm right" onclick="saveDoc()">保存修改</button></h3>
+  <textarea id="vcontent" rows="16"></textarea>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+let curDoc = 0;
+async function upload(e) {
+  e.preventDefault();
+  const form = document.getElementById('upform');
+  const fd = new FormData();
+  fd.append('title', form.querySelector('[name=title]').value);
+  fd.append('tags', form.querySelector('[name=tags]').value);
+  const f = form.querySelector('[name=file]').files[0];
+  if (!f) { toast('请选择文件', true); return false; }
+  fd.append('file', f);
+  const r = await api('/api/docs', { method: 'POST', body: fd });
+  toast('已建立 ' + r.chunks + ' 个索引片段');
+  setTimeout(() => location.reload(), 700);
+  return false;
+}
+async function pasteDoc() {
+  const d = collect(document.getElementById('pasteform'));
+  const r = await api('/api/docs', { method: 'POST', body: d });
+  toast('已建立 ' + r.chunks + ' 个索引片段');
+  setTimeout(() => location.reload(), 700);
+}
+async function del(id) { await api('/api/docs/' + id, { method: 'DELETE' });
+  toast('已删除'); location.reload(); }
+async function view(id) {
+  const r = await api('/api/docs/' + id);
+  curDoc = id;
+  document.getElementById('viewbox').style.display = '';
+  document.getElementById('vtitle').textContent = r.doc.title;
+  document.getElementById('vcontent').value = r.doc.content;
+}
+async function saveDoc() {
+  if (!curDoc) return;
+  const r = await api('/api/docs/' + curDoc, { method: 'PUT',
+    body: { content: document.getElementById('vcontent').value } });
+  toast('已重建 ' + r.chunks + ' 个索引片段');
+}
+async function search() {
+  const q = document.getElementById('q').value.trim();
+  if (!q) return;
+  const r = await api('/api/docs/search?top_k=5&q=' + encodeURIComponent(q));
+  const box = document.getElementById('sres');
+  box.innerHTML = r.results.length ? '' : '<p class="muted">没有命中任何条款</p>';
+  r.results.forEach(s => {
+    const d = document.createElement('div');
+    d.className = 'card mb';
+    d.innerHTML = `<h3>《${s.title}》片段 ${s.seq} <span class="tag">相关度 ${s.score.toFixed(3)}</span></h3>`;
+    const p = document.createElement('p');
+    p.textContent = s.text;
+    d.appendChild(p); box.appendChild(d);
+  });
+}
+</script>
+{% endblock %}

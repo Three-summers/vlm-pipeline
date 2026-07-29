@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+tools-venv/
+
+# Runtime data (never commit production DB / media / logs)
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+output/*
+!output/.gitkeep
+models/*
+!models/.gitkeep
+
+# Secrets
+**/initial-admin-password.txt
+**/*password*
+**/*secret*
+*.db
+*.db-shm
+*.db-wal
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log

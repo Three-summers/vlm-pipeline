@@ -1,0 +1,22 @@
+# RTSP 时序分析模板：5 秒窗口采 8 帧，一次性送 VLM 做时序动作判定
+# 使用前把 uri 换成真实 RTSP 地址（含凭据的 URL 不要提交到 Git）
+task_id: rtsp-temporal-template
+source:
+  type: rtsp
+  uri: rtsp://user:pass@192.168.1.xxx:554/stream
+mode: temporal
+frame_stride: 2
+temporal:
+  window_seconds: 5
+  frames_count: 8
+vlm:
+  base_url: http://127.0.0.1:8001/v1
+  model: Qwen2.5-VL-7B-Instruct-AWQ
+  max_tokens: 768
+  temperature: 0
+target_actions: ["人员摔倒", "打架斗殴"]
+alarm:
+  cooldown_seconds: 30
+  output_dir: ./output
+consumer_threads: 2
+max_frames: 0

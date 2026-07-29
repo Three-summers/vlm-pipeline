@@ -1,0 +1,15 @@
+# 路径为示例，部署前请修改（docs/DEPLOY.md）
+task_id: smoke-small-only
+source:
+  type: image
+  uri: /srv/data/datasets/factory-ppe/yolo/factory-ppe-20260724-v1/images/val
+mode: small_only
+yolo:
+  weights: /srv/data/models/yolo/weights/yolo11m.pt
+  device: "0"
+  conf: 0.35
+  classes: [0]
+max_frames: 5
+alarm:
+  output_dir: ./output
+  cooldown_seconds: 0

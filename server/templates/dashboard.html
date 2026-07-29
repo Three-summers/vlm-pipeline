@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}仪表板 · {{ site_name }}{% endblock %}
+{% block h1 %}仪表板{% endblock %}
+{% block actions %}<button class="btn sm" onclick="location.reload()">刷新</button>{% endblock %}
+{% block content %}
+
+<div class="grid g4" id="kpis">
+  <div class="card"><h3>视频源</h3><div class="kpi"><span data-k="sources">{{ d.counts.sources }}</span></div></div>
+  <div class="card"><h3>算法</h3><div class="kpi"><span data-k="algorithms">{{ d.counts.algorithms }}</span></div></div>
+  <div class="card"><h3>分析任务</h3>
+    <div class="kpi"><span data-k="running">{{ d.counts.running }}</span><small>/ <span data-k="tasks">{{ d.counts.tasks }}</span> 运行中</small></div></div>
+  <div class="card"><h3>今日告警</h3>
+    <div class="kpi"><span data-k="alarms_today">{{ d.counts.alarms_today }}</span><small>累计 <span data-k="alarms_total">{{ d.counts.alarms_total }}</span></small></div></div>
+  <div class="card"><h3>待确认告警</h3><div class="kpi"><span data-k="unacked">{{ d.counts.unacked }}</span></div></div>
+  <div class="card"><h3>巡检记录</h3><div class="kpi"><span data-k="records_total">{{ d.counts.records_total }}</span></div></div>
+</div>
+
+<div class="grid g2 mt">
+  <div class="card">
+    <h3>近 7 日告警趋势</h3>
+    <div class="spark-wrap">
+      {% set mx = (d.trend | map(attribute='count') | max) or 1 %}
+      <div class="spark">
+        {% for p in d.trend %}
+        <div style="height: {{ (p.count / mx * 100) | round(1) }}%">
+          <span>{{ p.count }}</span><b>{{ p.date }}</b>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>告警行为分布</h3>
+    {% if d.by_action %}
+    <table>
+      <tbody>
+      {% set amx = d.by_action[0].c or 1 %}
+      {% for a in d.by_action %}
+      <tr><td style="width:40%">{{ a.action or '(未分类)' }}</td>
+        <td><div class="bar"><i style="width: {{ (a.c / amx * 100) | round }}%"></i></div></td>
+        <td class="right nowrap">{{ a.c }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">暂无告警数据</p>{% endif %}
+  </div>
+</div>
+
+<div class="grid g2 mt">
+  <div class="card">
+    <h3>主机资源</h3>
+    <table>
+      <tr><td>CPU（{{ d.host.cores }} 核，负载 {{ d.host.load | join(' / ') }}）</td>
+        <td><div class="bar"><i class="{{ 'bad' if d.host.cpu_pct >= 90 else 'warn' if d.host.cpu_pct >= 70 else '' }}" style="width: {{ d.host.cpu_pct }}%"></i></div></td>
+        <td class="right nowrap">{{ d.host.cpu_pct }}%</td></tr>
+      <tr><td>内存 {{ d.host.mem_used_gb }} / {{ d.host.mem_total_gb }} GB</td>
+        <td><div class="bar"><i class="{{ 'bad' if d.host.mem_pct >= 90 else 'warn' if d.host.mem_pct >= 70 else '' }}" style="width: {{ d.host.mem_pct }}%"></i></div></td>
+        <td class="right nowrap">{{ d.host.mem_pct }}%</td></tr>
+      <tr><td>磁盘 {{ d.host.disk_used_gb }} / {{ d.host.disk_total_gb }} GB</td>
+        <td><div class="bar"><i class="{{ 'bad' if d.host.disk_pct >= 90 else 'warn' if d.host.disk_pct >= 70 else '' }}" style="width: {{ d.host.disk_pct }}%"></i></div></td>
+        <td class="right nowrap">{{ d.host.disk_pct }}%</td></tr>
+    </table>
+    <div class="sep"></div>
+    <h3>GPU</h3>
+    {% for gpu in d.gpus %}
+    <div class="mb">
+      <div class="flex"><b>#{{ gpu.index }} {{ gpu.name }}</b>
+        <span class="tag">{{ gpu.temp | int }}°C</span>
+        <span class="muted">显存 {{ (gpu.mem_used / 1024) | round(1) }} / {{ (gpu.mem_total / 1024) | round(1) }} GB</span></div>
+      <div class="bar"><i class="{{ 'bad' if gpu.mem_pct >= 90 else 'warn' if gpu.mem_pct >= 70 else '' }}" style="width: {{ gpu.mem_pct }}%"></i></div>
+      <div class="hint">利用率 {{ gpu.util }}% · 显存占用 {{ gpu.mem_pct }}%</div>
+    </div>
+    {% else %}<p class="muted">未检测到 NVIDIA GPU（nvidia-smi 不可用）</p>{% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>任务运行状态</h3>
+    <table>
+      <thead><tr><th>任务</th><th>模式</th><th>状态</th><th class="right">处理帧 / VLM 调用</th></tr></thead>
+      <tbody>
+      {% for t in d.tasks %}
+      <tr>
+        <td><a href="/tasks/{{ t.id }}">{{ t.name }}</a></td>
+        <td class="muted">{{ t.mode }}</td>
+        <td><span class="badge {{ t.runtime.status }}">{{ t.runtime.status }}</span></td>
+        <td class="right nowrap muted">{{ t.runtime.stats.get('frames', 0) }} / {{ t.runtime.stats.get('vlm_calls', 0) }}</td>
+      </tr>
+      {% else %}<tr><td colspan="4" class="muted">还没有分析任务，先去<a href="/tasks/new">新建任务</a></td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mt">
+  <h3>最近告警</h3>
+  <table>
+    <thead><tr><th>截图</th><th>时间</th><th>任务</th><th>行为</th><th>置信度</th><th>描述</th></tr></thead>
+    <tbody>
+    {% for a in d.recent %}
+    {% set snaps = a.snapshots_json | fromjson %}
+    <tr>
+      <td>{% if snaps %}<a href="/alarms/{{ a.id }}"><img class="thumb" src="/media?path={{ snaps[0] | urlencode }}"></a>{% endif %}</td>
+      <td class="nowrap">{{ a.alarm_time }}</td>
+      <td>{{ a.task_name }}</td>
+      <td>{{ a.action }}</td>
+      <td>{{ '%.2f' | format(a.confidence) }}</td>
+      <td><a href="/alarms/{{ a.id }}">{{ a.description[:60] }}</a></td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">暂无告警</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+// 每 10 秒静默刷新关键指标与任务状态，避免整页跳动
+poll(async () => {
+  const d = await api('/api/dashboard');
+  document.querySelectorAll('#kpis [data-k]').forEach(el => {
+    const v = d.counts[el.dataset.k];
+    if (v !== undefined) el.textContent = v;
+  });
+}, 10000);
+</script>
+{% endblock %}

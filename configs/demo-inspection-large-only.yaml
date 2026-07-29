@@ -1,0 +1,20 @@
+# 纯大模型巡检：target_actions 为空 => 每次分析落盘巡检报告
+# 路径为示例，部署前请修改（docs/DEPLOY.md）
+task_id: demo-inspection
+source:
+  type: image
+  uri: /srv/data/datasets/factory-ppe/yolo/factory-ppe-20260724-v1/images/val
+mode: large_only
+large_interval_seconds: 2
+frame_stride: 1
+vlm:
+  base_url: http://127.0.0.1:8001/v1
+  model: Qwen2.5-VL-7B-Instruct-AWQ
+  max_tokens: 1024
+  temperature: 0
+target_actions: []       # 空 = 巡检模式
+alarm:
+  cooldown_seconds: 0
+  output_dir: ./output
+consumer_threads: 2
+max_frames: 3

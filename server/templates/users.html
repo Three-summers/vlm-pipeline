@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}用户与权限 · {{ site_name }}{% endblock %}
+{% block h1 %}用户与权限{% endblock %}
+{% block content %}
+
+<div class="card mb">
+  <h3>新增用户</h3>
+  <div id="newform" class="row">
+    <div><label>用户名</label><input name="username"></div>
+    <div><label>显示名</label><input name="display_name"></div>
+    <div><label>密码（≥6 位）</label><input name="password" type="password"></div>
+    <div><label>角色</label>
+      <select name="role">
+        {% for r in roles %}<option value="{{ r }}">{{ ROLE_LABEL[r] }}</option>{% endfor %}
+      </select></div>
+    <div style="flex:0 0 90px"><label>&nbsp;</label><button class="btn primary" style="width:100%" onclick="createUser()">创建</button></div>
+  </div>
+  <div class="hint">权限说明：管理员可管理用户/配置；操作员可增删任务、启停任务、确认告警；只读用户仅能查看。</div>
+</div>
+
+<div class="card mb">
+  <h3>用户列表</h3>
+  <table>
+    <thead><tr><th>ID</th><th>用户名</th><th>显示名</th><th>角色</th><th>启用</th>
+      <th>创建时间</th><th>最近登录</th><th class="nowrap">操作</th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr id="u-{{ u.id }}">
+      <td>{{ u.id }}</td><td>{{ u.username }}</td>
+      <td><input data-f="display_name" value="{{ u.display_name }}" style="width:100px"></td>
+      <td><select data-f="role" style="width:100px">
+        {% for r in roles %}<option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ ROLE_LABEL[r] }}</option>{% endfor %}
+      </select></td>
+      <td><input type="checkbox" data-f="enabled" {{ 'checked' if u.enabled }}></td>
+      <td class="muted nowrap">{{ u.created_at }}</td>
+      <td class="muted nowrap">{{ u.last_login or '-' }}</td>
+      <td class="nowrap">
+        <input data-f="password" type="password" placeholder="重置密码" style="width:100px">
+        <button class="btn sm" onclick="saveUser({{ u.id }})">保存</button>
+        <button class="btn sm danger" onclick="confirmDo('确认删除用户 {{ u.username }}？', () => delUser({{ u.id }}))">删除</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card mb">
+  <h3>修改我的密码</h3>
+  <div id="pwform" class="row">
+    <div><label>原密码</label><input name="old" type="password"></div>
+    <div><label>新密码</label><input name="new" type="password"></div>
+    <div style="flex:0 0 90px"><label>&nbsp;</label><button class="btn" style="width:100%" onclick="changePw()">修改</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>开放 API Token</h3>
+  <div class="flex mb">
+    <input id="tname" placeholder="Token 名称，如 MES 系统" style="width:200px">
+    <select id="tscope" style="width:160px">
+      <option value="read">只读（read）</option>
+      <option value="read,write">读写（read,write）</option>
+    </select>
+    <button class="btn primary" onclick="createToken()">生成</button>
+  </div>
+  <div id="newtoken"></div>
+  <table>
+    <thead><tr><th>ID</th><th>名称</th><th>Token</th><th>权限</th><th>创建时间</th><th>最近使用</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for t in tokens %}
+    <tr><td>{{ t.id }}</td><td>{{ t.name }}</td>
+      <td class="muted">{{ t.token[:10] }}…{{ t.token[-4:] }}</td>
+      <td class="muted">{{ t.scopes }}</td>
+      <td class="muted nowrap">{{ t.created_at }}</td>
+      <td class="muted nowrap">{{ t.last_used_at or '未使用' }}</td>
+      <td><button class="btn sm danger" onclick="confirmDo('吊销该 Token？', () => delToken({{ t.id }}))">吊销</button></td></tr>
+    {% else %}<tr><td colspan="7" class="muted">还没有 Token</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <details class="box mt">
+    <summary>开放 API 用法</summary>
+    <pre class="log mt">GET  /openapi/v1/ping                  健康检查
+GET  /openapi/v1/tasks                 任务列表与运行状态
+POST /openapi/v1/tasks/&lt;id&gt;/start      启动任务（需 write）
+POST /openapi/v1/tasks/&lt;id&gt;/stop       停止任务（需 write）
+GET  /openapi/v1/alarms?since_id=100   增量拉取告警
+GET  /openapi/v1/alarms/&lt;id&gt;           告警详情
+POST /openapi/v1/alarms/&lt;id&gt;/ack       确认告警（需 write）
+GET  /openapi/v1/media?alarm_id=1&index=0   取告警截图
+GET  /openapi/v1/stats                 汇总统计与主机/GPU 指标
+
+curl -H "Authorization: Bearer &lt;token&gt;" http://本机IP:8090/openapi/v1/alarms?limit=10</pre>
+  </details>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+async function createUser() {
+  await api('/api/users', { method: 'POST', body: collect(document.getElementById('newform')) });
+  toast('已创建'); location.reload();
+}
+async function saveUser(id) {
+  const row = document.getElementById('u-' + id);
+  const v = f => row.querySelector('[data-f=' + f + ']');
+  const body = { display_name: v('display_name').value, role: v('role').value,
+                 enabled: v('enabled').checked ? 1 : 0 };
+  if (v('password').value) body.password = v('password').value;
+  await api('/api/users/' + id, { method: 'PUT', body });
+  toast('已保存'); v('password').value = '';
+}
+async function delUser(id) { await api('/api/users/' + id, { method: 'DELETE' });
+  toast('已删除'); location.reload(); }
+async function changePw() {
+  const d = collect(document.getElementById('pwform'));
+  await api('/api/me/password', { method: 'POST', body: d });
+  toast('密码已修改'); document.querySelectorAll('#pwform input').forEach(i => i.value = '');
+}
+async function createToken() {
+  const r = await api('/api/tokens', { method: 'POST',
+    body: { name: document.getElementById('tname').value || 'token',
+            scopes: document.getElementById('tscope').value } });
+  const box = document.getElementById('newtoken');
+  box.innerHTML = '';
+  const p = document.createElement('pre');
+  p.className = 'log';
+  p.textContent = '请立即复制保存，页面刷新后不再完整显示：\n' + r.token;
+  box.appendChild(p);
+}
+async function delToken(id) { await api('/api/tokens/' + id, { method: 'DELETE' });
+  toast('已吊销'); location.reload(); }
+</script>
+{% endblock %}

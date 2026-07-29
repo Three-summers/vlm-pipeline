@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}系统配置 · {{ site_name }}{% endblock %}
+{% block h1 %}系统配置{% endblock %}
+{% block content %}
+
+{% set LABELS = {
+  'site_name': '平台名称',
+  'retention_days': '告警保留天数（0=永不清理）',
+  'snapshot_quality': '截图 JPEG 质量（1-100）',
+  'default_frame_stride': '默认抽帧间隔',
+  'wall_columns': '监控墙默认列数',
+  'alarm_page_size': '告警列表每页条数',
+  'chat_max_alarms': '对话注入的最近告警条数',
+  'rag_top_k': 'RAG 检索片段数',
+  'gpu_index': '默认 GPU 序号',
+} %}
+
+<div class="card">
+  <h3>参数</h3>
+  <div id="form">
+    {% for s in settings %}
+      {% if s.key != 'secret_key' %}
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:0 0 260px"><label>{{ LABELS.get(s.key, s.key) }}</label>
+          <input name="{{ s.key }}" value="{{ s.value }}"></div>
+        <div class="muted" style="flex:1">{{ s.key }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <div class="mt"><button class="btn primary" onclick="save()">保存配置</button></div>
+  <div class="hint">修改后新启动的任务立即生效；已运行的任务需要重启才会读取新值。</div>
+</div>
+
+<div class="card mt">
+  <h3>关于本平台</h3>
+  <p class="muted">大小模型协同视频分析平台：YOLO11 负责逐帧检测与跟踪，Qwen2.5-VL 负责语义行为判定。
+  部署在离网工作站上，未使用 MySQL / Redis / MinIO / MediaMTX / 向量数据库，
+  分别以 SQLite(WAL)、进程内队列、本地文件系统、MJPEG、内置 TF-IDF 检索替代，功能等价、依赖为零。</p>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+async function save() {
+  await api('/api/settings', { method: 'POST', body: collect(document.getElementById('form')) });
+  toast('已保存'); setTimeout(() => location.reload(), 600);
+}
+</script>
+{% endblock %}

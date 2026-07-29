@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}告警详情 #{{ a.id }} · {{ site_name }}{% endblock %}
+{% block h1 %}告警详情 #{{ a.id }}{% endblock %}
+{% block actions %}
+{% if not a.ack_at %}<button class="btn primary sm" onclick="ack()">确认告警</button>{% endif %}
+<a class="btn sm" href="/alarms">返回列表</a>
+{% endblock %}
+{% block content %}
+
+<div class="grid g2">
+  <div class="card">
+    <h3>基本信息</h3>
+    <table>
+      <tr><th style="width:110px">类型</th><td>
+        {% if a.is_alarm %}<span class="badge error">告警</span>{% else %}<span class="tag">巡检记录</span>{% endif %}</td></tr>
+      <tr><th>任务</th><td><a href="/tasks/{{ a.task_id }}">{{ a.task_name }}</a></td></tr>
+      <tr><th>行为</th><td>{{ a.action or '-' }}</td></tr>
+      <tr><th>置信度</th><td>{{ '%.3f' | format(a.confidence) }}</td></tr>
+      <tr><th>告警时间</th><td>{{ a.alarm_time }}</td></tr>
+      <tr><th>视频流内时刻</th><td>{{ '%.2f' | format(a.stream_ts) }} 秒（帧 {{ a.frame_idx }}）</td></tr>
+      <tr><th>检测目标</th><td>{{ a.det_label or '-' }}
+        {% if a.track_id and a.track_id > 0 %}（跟踪 ID {{ a.track_id }}）{% endif %}</td></tr>
+      <tr><th>检测框</th><td class="muted">{{ a.box | join(', ') if a.box else '-' }}</td></tr>
+      <tr><th>确认状态</th><td>{% if a.ack_at %}{{ a.ack_by }} 于 {{ a.ack_at }}{% else %}未确认{% endif %}</td></tr>
+    </table>
+    <div class="sep"></div>
+    <h3>模型判定描述</h3>
+    <p>{{ a.description or '（无）' }}</p>
+    {% if a.clip_path %}
+    <div class="sep"></div>
+    <h3>告警录像</h3>
+    <video class="shot" controls src="/media?path={{ a.clip_path | urlencode }}"></video>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>截图（{{ a.snapshots | length }} 张）</h3>
+    {% for s in a.snapshots %}
+    <a href="/media?path={{ s | urlencode }}" target="_blank">
+      <img class="shot mb" src="/media?path={{ s | urlencode }}"></a>
+    {% else %}<p class="muted">无截图</p>{% endfor %}
+  </div>
+</div>
+
+<div class="grid g2 mt">
+  <details class="box">
+    <summary>大模型原始返回（用于排查判定偏差）</summary>
+    <pre class="log mt">{{ a.vlm_raw or '（无）' }}</pre>
+  </details>
+
+  <div class="card">
+    <h3>推送记录</h3>
+    <table>
+      <thead><tr><th>目标</th><th>时间</th><th>结果</th><th>HTTP</th></tr></thead>
+      <tbody>
+      {% for p in pushes %}
+      <tr><td>{{ p.target_name }}</td><td class="nowrap">{{ p.created_at }}</td>
+        <td><span class="badge {{ 'running' if p.ok else 'error' }}">{{ '成功' if p.ok else '失败' }}</span>
+          {% if not p.ok %}<div class="hint">{{ p.response[:80] }}</div>{% endif %}</td>
+        <td class="muted">{{ p.status_code }}</td></tr>
+      {% else %}<tr><td colspan="4" class="muted">没有推送记录（未配置推送目标或该记录不满足推送条件）</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+async function ack() { await api('/api/alarms/{{ a.id }}/ack', { method: 'POST' });
+  toast('已确认'); setTimeout(() => location.reload(), 500); }
+</script>
+{% endblock %}

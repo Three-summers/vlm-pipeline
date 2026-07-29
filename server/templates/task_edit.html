@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑任务' if task else '新建任务' }} · {{ site_name }}{% endblock %}
+{% block h1 %}{{ '编辑任务：' + task.name if task else '新建分析任务' }}{% endblock %}
+{% block actions %}<a class="btn sm" href="/tasks">返回列表</a>{% endblock %}
+{% block content %}
+
+<div id="form">
+<div class="grid g2">
+
+  <div class="card">
+    <h3>基本信息</h3>
+    <label>任务名称 *</label><input name="name" value="{{ task.name if task else '' }}">
+    <div class="row">
+      <div><label>视频源 *</label>
+        <select name="source_id" id="source_id">
+          {% for s in sources %}
+          <option value="{{ s.id }}" {{ 'selected' if task and task.source_id == s.id }}>{{ s.name }}（{{ s.type }}）</option>
+          {% endfor %}
+        </select></div>
+      <div><label>分析模式 *</label>
+        <select name="mode" id="mode" onchange="onMode()">
+          {% for m in modes %}
+          <option value="{{ m }}" {{ 'selected' if task and task.mode == m }}>{{ MODE_LABEL[m] }}</option>
+          {% endfor %}
+        </select></div>
+    </div>
+    <div class="row">
+      <div><label>YOLO 算法（small_* 模式必填）</label>
+        <select name="algorithm_id">
+          <option value="">（不使用）</option>
+          {% for a in algorithms %}
+          <option value="{{ a.id }}" {{ 'selected' if task and task.algorithm_id == a.id }}>{{ a.name }}</option>
+          {% endfor %}
+        </select></div>
+      <div><label>VLM 端点</label>
+        <select name="endpoint_id">
+          <option value="">（自动：所有启用端点轮询+故障转移）</option>
+          {% for e in endpoints %}
+          <option value="{{ e.id }}" {{ 'selected' if task and task.endpoint_id == e.id }}>{{ e.name }}</option>
+          {% endfor %}
+        </select></div>
+    </div>
+    <div class="row mt">
+      <div><label><input type="checkbox" name="autostart" {{ 'checked' if task and task.autostart }}> 平台启动时自动运行</label></div>
+      <div><label><input type="checkbox" name="enabled" {{ 'checked' if (not task) or task.enabled }}> 启用</label></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>判定规则</h3>
+    <label>目标行为（逗号分隔；<b>留空即巡检模式</b>，所有 VLM 结论都记录但不告警）</label>
+    <input name="target_actions" value="{{ (c.get('target_actions') or []) | join(',') }}"
+           placeholder="打电话,抽烟,未戴安全帽">
+    <label>补充提示词（会追加到 system prompt）</label>
+    <textarea name="prompt" rows="3">{{ c.get('prompt', '') }}</textarea>
+    <div class="row">
+      <div><label>最低置信度（低于则不告警）</label>
+        <input name="min_confidence" type="number" step="0.05" min="0" max="1" value="{{ c.get('min_confidence', 0.5) }}"></div>
+      <div><label>同类告警冷却（秒）</label>
+        <input name="cooldown_seconds" type="number" step="1" value="{{ c.get('cooldown_seconds', 30) }}"></div>
+    </div>
+    <label>关联规范文档（RAG，按住 Ctrl 多选）</label>
+    <select name="rule_doc_ids_multi" id="docsel" multiple size="4">
+      {% set sel = (task.rule_doc_ids if task else '').split(',') %}
+      {% for d in docs %}
+      <option value="{{ d.id }}" {{ 'selected' if d.id | string in sel }}>{{ d.title }}</option>
+      {% endfor %}
+    </select>
+    <div class="hint">选中后，任务启动时会检索最相关条款注入到大模型提示词，作为判定依据。</div>
+  </div>
+
+  <div class="card">
+    <h3>检测参数（YOLO）</h3>
+    <div class="row">
+      <div><label>置信度阈值 conf</label><input name="conf" type="number" step="0.05" value="{{ c.get('conf', 0.35) }}"></div>
+      <div><label>输入尺寸 imgsz</label><input name="imgsz" type="number" step="32" value="{{ c.get('imgsz', 960) }}"></div>
+      <div><label>抽帧间隔（每 N 帧处理 1 帧）</label><input name="frame_stride" type="number" min="1" value="{{ c.get('frame_stride', 5) }}"></div>
+    </div>
+    <div class="row">
+      <div><label>限定类别 ID（逗号分隔，留空=全部）</label><input name="classes" value="{{ (c.get('classes') or []) | join(',') }}" placeholder="0"></div>
+      <div><label>设备</label><input name="device" value="{{ c.get('device', '0') }}"></div>
+      <div><label>驻留判定（秒）</label><input name="dwell_seconds" type="number" step="0.5" value="{{ c.get('dwell_seconds', 2) }}"></div>
+    </div>
+    <div class="row">
+      <div><label>同一目标送审间隔（秒）</label><input name="vlm_interval_seconds" type="number" step="0.5" value="{{ c.get('vlm_interval_seconds', 5) }}"></div>
+      <div><label>消费线程数</label><input name="consumer_threads" type="number" min="1" max="8" value="{{ c.get('consumer_threads', 2) }}"></div>
+      <div><label>最大处理帧数（0=不限）</label><input name="max_frames" type="number" min="0" value="{{ c.get('max_frames', 0) }}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>大模型与模式参数</h3>
+    <div class="row">
+      <div><label>VLM 超时（秒）</label><input name="vlm_timeout" type="number" value="{{ c.get('vlm_timeout', 60) }}"></div>
+      <div><label>max_tokens</label><input name="max_tokens" type="number" value="{{ c.get('max_tokens', 256) }}"></div>
+      <div><label>temperature</label><input name="temperature" type="number" step="0.05" value="{{ c.get('temperature', 0.1) }}"></div>
+    </div>
+    <div class="row" id="p-large">
+      <div><label>large_only 送审间隔（秒）</label><input name="large_interval_seconds" type="number" step="1" value="{{ c.get('large_interval_seconds', 10) }}"></div>
+    </div>
+    <div class="row" id="p-temporal">
+      <div><label>时序窗口长度（秒）</label><input name="temporal_window_seconds" type="number" step="1" value="{{ c.get('temporal_window_seconds', 6) }}"></div>
+      <div><label>窗口内取帧数</label><input name="temporal_frames_count" type="number" min="2" max="10" value="{{ c.get('temporal_frames_count', 4) }}"></div>
+    </div>
+    <div class="sep"></div>
+    <div class="row">
+      <div><label><input type="checkbox" name="save_annotated" {{ 'checked' if c.get('save_annotated', True) }}> 保存带框标注图</label></div>
+      <div><label><input type="checkbox" name="live_preview" {{ 'checked' if c.get('live_preview', True) }}> 开启实时预览（监控墙）</label></div>
+      <div><label><input type="checkbox" name="record_clip" {{ 'checked' if c.get('record_clip') }}> 告警录像</label></div>
+    </div>
+    <div class="row">
+      <div><label>录像前置帧数</label><input name="clip_pre_frames" type="number" min="0" value="{{ c.get('clip_pre_frames', 15) }}"></div>
+      <div><label>录像后置帧数</label><input name="clip_post_frames" type="number" min="0" value="{{ c.get('clip_post_frames', 25) }}"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card mt">
+  <h3>检测区域 ROI（可选）</h3>
+  <div class="flex mb">
+    <button class="btn sm" onclick="loadFrame()">抓取一帧底图</button>
+    <select id="roimode" class="btn sm" style="width:auto">
+      <option value="include">绘制包含区（只在区内检测）</option>
+      <option value="exclude">绘制排除区（区内忽略）</option>
+    </select>
+    <button class="btn sm" onclick="finishPoly()">闭合当前多边形</button>
+    <button class="btn sm danger" onclick="clearRoi()">清空全部</button>
+    <span class="muted" id="roiinfo"></span>
+  </div>
+  <canvas class="roi" id="cv" width="640" height="360"></canvas>
+  <div class="hint">在底图上单击添加顶点，至少 3 个点后点「闭合当前多边形」。坐标按比例保存，切换分辨率仍然有效。</div>
+</div>
+
+<div class="mt flex">
+  <button class="btn primary" onclick="save()">{{ '保存修改' if task else '创建任务' }}</button>
+  {% if task %}<span class="muted">当前状态：<span class="badge {{ task.runtime.status }}">{{ task.runtime.status }}</span>
+    （运行中无法修改，请先在任务列表停止）</span>{% endif %}
+</div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+const IS_EDIT = {{ 'true' if task else 'false' }};
+const TASK_ID = {{ task.id if task else 0 }};
+let roi = { include: {{ (c.get('roi_include') or []) | tojson }},
+            exclude: {{ (c.get('roi_exclude') or []) | tojson }} };
+let cur = [];
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let bg = null;
+
+// 底图与 ROI 都按 0~1 归一化坐标存储
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (bg) ctx.drawImage(bg, 0, 0, cv.width, cv.height);
+  else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
+         ctx.fillStyle = '#666'; ctx.font = '14px sans-serif';
+         ctx.fillText('点「抓取一帧底图」加载画面（也可直接绘制）', 20, 30); }
+  const paint = (polys, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    polys.forEach(p => {
+      if (p.length < 2) return;
+      ctx.beginPath();
+      p.forEach((pt, i) => { const x = pt[0] * cv.width, y = pt[1] * cv.height;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      ctx.closePath(); ctx.stroke();
+    });
+  };
+  paint(roi.include, '#22c55e');
+  paint(roi.exclude, '#ef4444');
+  if (cur.length) {
+    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2; ctx.beginPath();
+    cur.forEach((pt, i) => { const x = pt[0] * cv.width, y = pt[1] * cv.height;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke();
+    cur.forEach(pt => { ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(pt[0] * cv.width - 3, pt[1] * cv.height - 3, 6, 6); });
+  }
+  document.getElementById('roiinfo').textContent =
+    `包含区 ${roi.include.length} 个 / 排除区 ${roi.exclude.length} 个 / 当前 ${cur.length} 点`;
+}
+cv.addEventListener('click', e => {
+  const r = cv.getBoundingClientRect();
+  cur.push([+((e.clientX - r.left) / r.width).toFixed(4),
+            +((e.clientY - r.top) / r.height).toFixed(4)]);
+  draw();
+});
+function finishPoly() {
+  if (cur.length < 3) return toast('至少需要 3 个顶点', true);
+  roi[document.getElementById('roimode').value].push(cur);
+  cur = []; draw();
+}
+function clearRoi() { roi = { include: [], exclude: [] }; cur = []; draw(); }
+async function loadFrame() {
+  const sid = document.getElementById('source_id').value;
+  if (!sid) return toast('请先选择视频源', true);
+  toast('正在抓帧…');
+  const r = await api('/api/sources/' + sid + '/test', { method: 'POST' });
+  if (!r.thumb) return toast('抓帧失败：' + r.message, true);
+  const img = new Image();
+  img.onload = () => { bg = img; draw(); toast(r.message); };
+  img.src = '/media?path=' + encodeURIComponent(r.thumb) + '&t=' + Date.now();
+}
+
+function onMode() {
+  const m = document.getElementById('mode').value;
+  document.getElementById('p-large').style.display = m === 'large_only' ? '' : 'none';
+  document.getElementById('p-temporal').style.display = m === 'temporal' ? '' : 'none';
+}
+
+async function save() {
+  const d = collect(document.getElementById('form'));
+  const docIds = Array.from(document.getElementById('docsel').selectedOptions).map(o => o.value);
+  delete d.rule_doc_ids_multi;
+  const body = {
+    name: d.name, source_id: d.source_id, algorithm_id: d.algorithm_id,
+    endpoint_id: d.endpoint_id, mode: d.mode, autostart: d.autostart,
+    enabled: d.enabled, rule_doc_ids: docIds.join(','),
+    config: Object.assign({}, d, { roi_include: roi.include, roi_exclude: roi.exclude }),
+  };
+  if (!body.name) return toast('任务名称必填', true);
+  if (IS_EDIT) { await api('/api/tasks/' + TASK_ID, { method: 'PUT', body });
+                 toast('已保存'); }
+  else { const r = await api('/api/tasks', { method: 'POST', body });
+         toast('已创建'); location.href = '/tasks/' + r.id; }
+}
+onMode(); draw();
+</script>
+{% endblock %}

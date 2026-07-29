@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<div class="layout">
+  <aside class="side">
+    <div class="brand">{{ site_name }}</div>
+    <nav>
+      {# 变量名带 nav_ 前缀，避免与各页面传入的 items/total 等上下文重名 #}
+      {% set nav_items = [
+        ('/', '仪表板', 'viewer'),
+        ('/wall', '监控墙', 'viewer'),
+        ('/sources', '视频源', 'viewer'),
+        ('/algorithms', '算法管理', 'viewer'),
+        ('/tasks', '分析任务', 'viewer'),
+        ('/alarms', '告警记录', 'viewer'),
+        ('/chat', '智能对话', 'viewer'),
+        ('/docs', '规范文档', 'viewer'),
+        ('/endpoints', 'VLM 端点', 'operator'),
+        ('/push', '告警推送', 'operator'),
+        ('/ops', '系统运维', 'operator'),
+        ('/users', '用户与权限', 'admin'),
+        ('/settings', '系统配置', 'admin'),
+      ] %}
+      {% set nav_lvl = (ROLE_LEVEL[user.role] if user else 0) %}
+      {% for href, label, need in nav_items %}
+        {% if nav_lvl >= ROLE_LEVEL[need] %}
+        <a href="{{ href }}" class="{{ 'on' if nav_active == href or (href != '/' and nav_active.startswith(href)) else '' }}">{{ label }}</a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+    <div class="side-foot">
+      {% if user %}
+      <div class="who">{{ user.display_name or user.username }}
+        <span class="tag">{{ ROLE_LABEL[user.role] }}</span></div>
+      <a class="logout" href="/logout">退出登录</a>
+      {% endif %}
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <h1>{% block h1 %}{% endblock %}</h1>
+      <div class="topbar-actions">{% block actions %}{% endblock %}</div>
+    </header>
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+<div id="toast" class="toast"></div>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% block script %}{% endblock %}
+</body>
+</html>

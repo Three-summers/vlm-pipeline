@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}VLM 端点 · {{ site_name }}{% endblock %}
+{% block h1 %}VLM 端点管理{% endblock %}
+{% block actions %}<button class="btn sm" onclick="checkAll()">健康检查</button>{% endblock %}
+{% block content %}
+
+<div class="card mb">
+  <h3>新增端点</h3>
+  <div id="newform" class="row">
+    <div><label>名称</label><input name="name" placeholder="本机 vLLM"></div>
+    <div style="flex:2 1 260px"><label>Base URL（OpenAI 兼容，需带 /v1）</label>
+      <input name="base_url" placeholder="http://127.0.0.1:8001/v1"></div>
+    <div><label>模型名</label><input name="model" placeholder="Qwen2.5-VL-7B-Instruct-AWQ"></div>
+    <div><label>API Key</label><input name="api_key" value="EMPTY"></div>
+    <div style="flex:0 0 90px"><label>权重</label><input name="weight" type="number" value="1"></div>
+  </div>
+  <div class="mt"><button class="btn primary" onclick="create()">保存</button></div>
+  <div class="hint">配置多个端点时，任务会按权重轮询并在失败后 30 秒内自动跳过故障端点。</div>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr><th>ID</th><th>名称</th><th>Base URL</th><th>模型</th><th>权重</th>
+      <th>启用</th><th>API Key</th><th>最近检查</th><th class="nowrap">操作</th></tr></thead>
+    <tbody>
+    {% for e in items %}
+    <tr id="row-{{ e.id }}">
+      <td>{{ e.id }}</td>
+      <td><input data-f="name" value="{{ e.name }}" style="width:110px"></td>
+      <td><input data-f="base_url" value="{{ e.base_url }}" style="width:220px"></td>
+      <td><input data-f="model" value="{{ e.model }}" style="width:200px"></td>
+      <td><input data-f="weight" type="number" value="{{ e.weight }}" style="width:60px"></td>
+      <td><input type="checkbox" data-f="enabled" {{ 'checked' if e.enabled }}></td>
+      <td><input data-f="api_key" type="password" placeholder="留空表示不修改" style="width:110px"></td>
+      <td>
+        {% if e.last_check_at %}
+        <span class="badge {{ 'running' if e.last_check_ok else 'error' }}">{{ '可用' if e.last_check_ok else '不可用' }}</span>
+        <div class="hint">{{ e.last_check_at }}<br>{{ e.last_check_msg[:60] }}</div>
+        {% else %}<span class="muted">未检查</span>{% endif %}
+      </td>
+      <td class="nowrap">
+        <button class="btn sm" onclick="save({{ e.id }})">保存</button>
+        <button class="btn sm danger" onclick="confirmDo('确认删除？', () => del({{ e.id }}))">删除</button>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="9" class="muted">还没有端点</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+async function create() {
+  await api('/api/endpoints', { method: 'POST', body: collect(document.getElementById('newform')) });
+  toast('已创建'); location.reload();
+}
+async function save(id) {
+  const row = document.getElementById('row-' + id);
+  const v = f => row.querySelector('[data-f=' + f + ']');
+  const body = { name: v('name').value, base_url: v('base_url').value, model: v('model').value,
+                 weight: v('weight').value, enabled: v('enabled').checked ? 1 : 0 };
+  if (v('api_key').value) body.api_key = v('api_key').value;   // 留空则服务端保留原值
+  await api('/api/endpoints/' + id, { method: 'PUT', body });
+  toast('已保存');
+}
+async function del(id) { await api('/api/endpoints/' + id, { method: 'DELETE' });
+  toast('已删除'); location.reload(); }
+async function checkAll() {
+  toast('检查中…');
+  const r = await api('/api/endpoints/check', { method: 'POST' });
+  toast(r.items.map(i => i.name + ': ' + (i.health.ok ? '可用' : '不可用')).join('；'));
+  setTimeout(() => location.reload(), 1200);
+}
+</script>
+{% endblock %}

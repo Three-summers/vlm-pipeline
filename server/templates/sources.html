@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}视频源 · {{ site_name }}{% endblock %}
+{% block h1 %}视频源管理{% endblock %}
+{% block actions %}<button class="btn primary sm" onclick="document.getElementById('newbox').open=true">新增视频源</button>{% endblock %}
+{% block content %}
+
+<details class="box mb" id="newbox">
+  <summary>新增视频源</summary>
+  <div id="newform" class="mt">
+    <div class="row">
+      <div><label>名称</label><input name="name" placeholder="1号车间东侧"></div>
+      <div><label>类型</label>
+        <select name="type">
+          <option value="rtsp">RTSP 摄像头</option>
+          <option value="file">本地视频文件</option>
+          <option value="image">图片目录</option>
+        </select></div>
+      <div><label>位置</label><input name="location" placeholder="A 区"></div>
+    </div>
+    <label>地址（RTSP URL / 视频文件路径 / 图片目录）</label>
+    <input name="uri" placeholder="rtsp://user:pass@192.168.1.64:554/Streaming/Channels/101">
+    <div class="hint">带账号密码的 RTSP 地址仅存于本机数据库，开放 API 不会返回该字段。</div>
+    <label>备注</label><input name="note">
+    <div class="mt"><button class="btn primary" onclick="createSource()">保存</button></div>
+  </div>
+</details>
+
+<div class="card">
+  <table>
+    <thead><tr><th>ID</th><th>缩略图</th><th>名称</th><th>类型</th><th>位置</th>
+      <th>连通性</th><th class="nowrap">操作</th></tr></thead>
+    <tbody>
+    {% for s in sources %}
+    <tr id="row-{{ s.id }}" data-type="{{ s.type }}" data-uri="{{ s.uri }}">
+      <td>{{ s.id }}</td>
+      <td>{% if s.thumb_path %}<img class="thumb" src="/media?path={{ s.thumb_path | urlencode }}&t={{ s.last_check_at }}">{% else %}<span class="muted">-</span>{% endif %}</td>
+      <td><input value="{{ s.name }}" data-f="name" style="width:150px"></td>
+      <td class="muted">{{ s.type }}</td>
+      <td><input value="{{ s.location }}" data-f="location" style="width:100px"></td>
+      <td>
+        {% if s.last_check_at %}
+          <span class="badge {{ 'running' if s.last_check_ok else 'error' }}">{{ '正常' if s.last_check_ok else '失败' }}</span>
+          <div class="hint">{{ s.last_check_at }} {{ s.last_check_msg[:40] }}</div>
+        {% else %}<span class="muted">未测试</span>{% endif %}
+      </td>
+      <td class="nowrap">
+        <button class="btn sm" onclick="testSource({{ s.id }})">测试</button>
+        <button class="btn sm" onclick="saveSource({{ s.id }})">保存</button>
+        <button class="btn sm danger" onclick="confirmDo('确认删除视频源 {{ s.name }}？', () => delSource({{ s.id }}))">删除</button>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="7" class="muted">还没有视频源</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+async function createSource() {
+  const d = collect(document.getElementById('newform'));
+  if (!d.name || !d.uri) return toast('名称与地址必填', true);
+  await api('/api/sources', { method: 'POST', body: d });
+  toast('已创建'); location.reload();
+}
+async function saveSource(id) {
+  const row = document.getElementById('row-' + id);
+  const get = f => row.querySelector('[data-f=' + f + ']').value;
+  await api('/api/sources/' + id, { method: 'PUT',
+    body: { name: get('name'), location: get('location'),
+            type: row.dataset.type, uri: row.dataset.uri, enabled: 1 } });
+  toast('已保存');
+}
+async function delSource(id) {
+  await api('/api/sources/' + id, { method: 'DELETE' });
+  toast('已删除'); location.reload();
+}
+async function testSource(id) {
+  toast('正在连接，请稍候…');
+  const r = await api('/api/sources/' + id + '/test', { method: 'POST' });
+  toast(r.message, !r.check_ok);
+  setTimeout(() => location.reload(), 900);
+}
+</script>
+{% endblock %}

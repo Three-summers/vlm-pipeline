@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}算法管理 · {{ site_name }}{% endblock %}
+{% block h1 %}算法管理（YOLO 权重）{% endblock %}
+{% block actions %}<button class="btn sm" onclick="scanWeights()">扫描权重目录</button>{% endblock %}
+{% block content %}
+
+<div class="card mb">
+  <h3>手工登记权重</h3>
+  <div id="newform" class="row">
+    <div><label>名称</label><input name="name" placeholder="yolo11m"></div>
+    <div style="flex:2 1 320px"><label>权重路径（.pt）</label><input name="weights_path" placeholder="/srv/data/models/yolo/weights/yolo11m.pt"></div>
+    <div><label>备注</label><input name="note"></div>
+  </div>
+  <div class="mt"><button class="btn primary" onclick="createAlgo()">登记</button></div>
+  <div class="hint">扫描目录：{{ weight_dirs | join('，') }}</div>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr><th>ID</th><th>名称</th><th>权重路径</th><th>类别数</th><th>备注</th><th>启用</th><th class="nowrap">操作</th></tr></thead>
+    <tbody>
+    {% for a in items %}
+    {% set classes = a.classes_json | fromjson %}
+    <tr id="row-{{ a.id }}">
+      <td>{{ a.id }}</td>
+      <td><input data-f="name" value="{{ a.name }}" style="width:120px"></td>
+      <td><input data-f="weights_path" value="{{ a.weights_path }}" style="width:100%;min-width:260px"></td>
+      <td class="nowrap">
+        {% if classes %}<span class="tag" title="{{ classes | map(attribute='name') | join('，') }}">{{ classes | length }} 类</span>
+        {% else %}<span class="muted">未读取</span>{% endif %}
+      </td>
+      <td class="muted">{{ a.note }}</td>
+      <td><input type="checkbox" data-f="enabled" {{ 'checked' if a.enabled }}></td>
+      <td class="nowrap">
+        <button class="btn sm" onclick="loadClasses({{ a.id }})">读类别</button>
+        <button class="btn sm" onclick="saveAlgo({{ a.id }})">保存</button>
+        <button class="btn sm danger" onclick="confirmDo('确认删除？', () => delAlgo({{ a.id }}))">删除</button>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="7" class="muted">还没有算法，点右上「扫描权重目录」自动登记</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if items %}
+<details class="box mt">
+  <summary>查看各算法类别表</summary>
+  {% for a in items %}
+    {% set classes = a.classes_json | fromjson %}
+    {% if classes %}
+    <div class="mt"><b>{{ a.name }}</b>
+      <div class="hint">{% for c in classes %}{{ c.id }}:{{ c.name }}{{ '　' if not loop.last }}{% endfor %}</div>
+    </div>
+    {% endif %}
+  {% endfor %}
+</details>
+{% endif %}
+{% endblock %}
+
+{% block script %}
+<script>
+async function createAlgo() {
+  const d = collect(document.getElementById('newform'));
+  await api('/api/algorithms', { method: 'POST', body: d });
+  toast('已登记'); location.reload();
+}
+async function saveAlgo(id) {
+  const row = document.getElementById('row-' + id);
+  await api('/api/algorithms/' + id, { method: 'PUT', body: {
+    name: row.querySelector('[data-f=name]').value,
+    weights_path: row.querySelector('[data-f=weights_path]').value,
+    enabled: row.querySelector('[data-f=enabled]').checked ? 1 : 0 } });
+  toast('已保存');
+}
+async function delAlgo(id) {
+  await api('/api/algorithms/' + id, { method: 'DELETE' });
+  toast('已删除'); location.reload();
+}
+async function scanWeights() {
+  const r = await api('/api/algorithms/scan', { method: 'POST' });
+  toast(r.added.length ? '新增: ' + r.added.join('、') : '没有发现未登记的权重');
+  if (r.added.length) setTimeout(() => location.reload(), 800);
+}
+async function loadClasses(id) {
+  toast('正在加载权重读取类别，首次较慢…');
+  const r = await api('/api/algorithms/' + id + '/classes', { method: 'POST' });
+  toast('共 ' + r.classes.length + ' 类');
+  setTimeout(() => location.reload(), 700);
+}
+</script>
+{% endblock %}

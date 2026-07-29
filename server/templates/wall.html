@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}监控墙 · {{ site_name }}{% endblock %}
+{% block h1 %}视频监控墙{% endblock %}
+{% block actions %}
+<select id="colsel" class="btn sm" style="width:auto" onchange="setCols()">
+  {% for n in [1, 2, 3, 4] %}<option value="{{ n }}" {{ 'selected' if cols == n }}>{{ n }} 列</option>{% endfor %}
+</select>
+<button class="btn sm" id="modebtn" onclick="toggleMode()">切换为逐帧刷新</button>
+{% endblock %}
+{% block content %}
+
+<div class="wall" id="wall" style="grid-template-columns: repeat({{ cols }}, 1fr)">
+  {% for t in tasks %}
+  <div class="cell" id="task-{{ t.id }}">
+    <img data-tid="{{ t.id }}" src="/live/{{ t.id }}.mjpg" alt="{{ t.name }}"
+         onerror="this.src='/live/{{ t.id }}.jpg'">
+    <div class="cap">
+      <span>{{ t.name }} <span class="muted">· {{ t.source_name }}</span></span>
+      <span><span class="badge {{ t.runtime.status }}" id="wst-{{ t.id }}">{{ t.runtime.status }}</span></span>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">没有启用的任务。先到<a href="/tasks/new">新建任务</a>并启动，画面才会出现在这里。</p>
+  {% endfor %}
+</div>
+
+<p class="hint mt">预览由分析进程写出的标注帧组成（含 ROI 与检测框），默认 2 帧/秒。
+任务未运行或关闭了「实时预览」时显示为静态占位图。</p>
+{% endblock %}
+
+{% block script %}
+<script>
+const IDS = [{{ tasks | map(attribute='id') | join(', ') }}];
+let frameMode = false;
+
+function setCols() {
+  const n = document.getElementById('colsel').value;
+  document.getElementById('wall').style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+}
+
+// MJPEG 长连接在某些代理下不稳定，提供逐帧刷新兜底
+function toggleMode() {
+  frameMode = !frameMode;
+  document.getElementById('modebtn').textContent =
+    frameMode ? '切换为 MJPEG 流' : '切换为逐帧刷新';
+  document.querySelectorAll('#wall img').forEach(img => {
+    const tid = img.dataset.tid;
+    img.src = frameMode ? `/live/${tid}.jpg?t=${Date.now()}` : `/live/${tid}.mjpg`;
+  });
+}
+
+poll(async () => {
+  for (const id of IDS) {
+    try {
+      const r = await api('/api/tasks/' + id + '/status');
+      const el = document.getElementById('wst-' + id);
+      el.textContent = r.status; el.className = 'badge ' + r.status;
+    } catch (e) { /* 忽略 */ }
+  }
+}, 5000);
+
+// 逐帧模式下单独用更快的节奏拉图
+poll(async () => {
+  if (!frameMode) return;
+  document.querySelectorAll('#wall img').forEach(img => {
+    img.src = `/live/${img.dataset.tid}.jpg?t=${Date.now()}`;
+  });
+}, 800);
+</script>
+{% endblock %}

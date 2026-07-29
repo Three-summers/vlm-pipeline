@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}系统运维 · {{ site_name }}{% endblock %}
+{% block h1 %}系统运维{% endblock %}
+{% block actions %}
+<button class="btn sm" onclick="checkEp()">检查 VLM 端点</button>
+{% if user.role == 'admin' %}<button class="btn sm danger" onclick="cleanup()">清理过期数据</button>{% endif %}
+{% endblock %}
+{% block content %}
+
+<div class="grid g2">
+  <div class="card">
+    <h3>主机</h3>
+    <table id="hosttbl">
+      <tr><td>CPU（{{ host.cores }} 核）</td><td><div class="bar"><i style="width:{{ host.cpu_pct }}%"></i></div></td><td class="right nowrap">{{ host.cpu_pct }}%</td></tr>
+      <tr><td>负载</td><td colspan="2" class="right">{{ host.load | join(' / ') }}</td></tr>
+      <tr><td>内存</td><td><div class="bar"><i style="width:{{ host.mem_pct }}%"></i></div></td><td class="right nowrap">{{ host.mem_used_gb }}/{{ host.mem_total_gb }} GB</td></tr>
+      <tr><td>磁盘</td><td><div class="bar"><i style="width:{{ host.disk_pct }}%"></i></div></td><td class="right nowrap">{{ host.disk_used_gb }}/{{ host.disk_total_gb }} GB</td></tr>
+      <tr><td>已运行</td><td colspan="2" class="right">{{ host.uptime_h }} 小时</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>GPU</h3>
+    {% for g in gpus %}
+    <div class="mb">
+      <b>#{{ g.index }} {{ g.name }}</b> <span class="tag">{{ g.temp | int }}°C</span>
+      <div class="bar"><i class="{{ 'bad' if g.mem_pct >= 90 else 'warn' if g.mem_pct >= 70 else '' }}" style="width:{{ g.mem_pct }}%"></i></div>
+      <div class="hint">显存 {{ (g.mem_used/1024) | round(1) }} / {{ (g.mem_total/1024) | round(1) }} GB（{{ g.mem_pct }}%）· 利用率 {{ g.util }}%</div>
+    </div>
+    {% else %}<p class="muted">nvidia-smi 不可用</p>{% endfor %}
+    <div class="sep"></div>
+    <h3>存储占用</h3>
+    <table>
+      <tr><td>输出目录（截图/录像/预览）</td><td class="right">{{ storage.output_mb }} MB</td></tr>
+      <tr><td>模型目录</td><td class="right">{{ storage.models_mb }} MB</td></tr>
+      <tr><td>日志目录</td><td class="right">{{ storage.logs_mb }} MB</td></tr>
+      <tr><td>数据库</td><td class="right">{{ storage.db_mb }} MB</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="card mt">
+  <h3>VLM 服务</h3>
+  <table>
+    <thead><tr><th>名称</th><th>Base URL</th><th>模型</th><th>启用</th><th>最近检查</th></tr></thead>
+    <tbody>
+    {% for e in endpoints %}
+    <tr><td>{{ e.name }}</td><td class="muted">{{ e.base_url }}</td><td class="muted">{{ e.model }}</td>
+      <td>{{ '是' if e.enabled else '否' }}</td>
+      <td>{% if e.last_check_at %}
+        <span class="badge {{ 'running' if e.last_check_ok else 'error' }}">{{ '可用' if e.last_check_ok else '不可用' }}</span>
+        <span class="hint">{{ e.last_check_at }} {{ e.last_check_msg[:50] }}</span>
+        {% else %}<span class="muted">未检查</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">未配置端点</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card mt">
+  <h3>日志查看</h3>
+  <div class="flex mb">
+    <input id="logname" value="vlm-server.log" style="width:260px">
+    <button class="btn" onclick="loadLog()">加载</button>
+    <span class="muted">相对于 logs/ 目录，例如 vlm-server.log、web.log、tasks/task-1.log</span>
+  </div>
+  <pre class="log" id="logtext">（未加载）</pre>
+</div>
+
+<div class="card mt">
+  <h3>操作审计（最近 50 条）</h3>
+  <table>
+    <thead><tr><th>时间</th><th>用户</th><th>动作</th><th>详情</th><th>来源 IP</th></tr></thead>
+    <tbody>
+    {% for a in audits %}
+    <tr><td class="nowrap muted">{{ a.created_at }}</td><td>{{ a.username }}</td>
+      <td>{{ a.action }}</td><td class="muted">{{ a.detail[:60] }}</td><td class="muted">{{ a.ip }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">暂无记录</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+async function loadLog() {
+  const r = await api('/api/ops/log?lines=300&name=' + encodeURIComponent(document.getElementById('logname').value));
+  const el = document.getElementById('logtext');
+  el.textContent = r.log; el.scrollTop = el.scrollHeight;
+}
+async function checkEp() {
+  toast('检查中…');
+  const r = await api('/api/endpoints/check', { method: 'POST' });
+  toast(r.items.map(i => i.name + ': ' + (i.health.ok ? '可用' : '不可用')).join('；'));
+  setTimeout(() => location.reload(), 1200);
+}
+async function cleanup() {
+  const dry = await api('/api/ops/cleanup', { method: 'POST', body: { dry_run: true } });
+  if (dry.skipped) return toast(dry.reason);
+  confirmDo(`将删除 ${dry.alarms} 条超过 ${dry.days} 天的记录及其截图，确认？`, async () => {
+    const r = await api('/api/ops/cleanup', { method: 'POST', body: { dry_run: false } });
+    toast(`已清理 ${r.alarms} 条记录、${r.files} 个文件`);
+  });
+}
+</script>
+{% endblock %}

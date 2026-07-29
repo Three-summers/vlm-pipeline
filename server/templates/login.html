@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · {{ site_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<form class="login-box" method="post" action="/login">
+  <h2>{{ site_name }}</h2>
+  <p class="sub">大小模型协同视频分析平台</p>
+  <label>用户名</label>
+  <input name="username" autocomplete="username" autofocus required>
+  <label>密码</label>
+  <input name="password" type="password" autocomplete="current-password" required>
+  <div class="mt"><button class="btn primary" style="width:100%">登录</button></div>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+</form>
+</body>
+</html>

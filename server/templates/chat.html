@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}智能对话 · {{ site_name }}{% endblock %}
+{% block h1 %}智能对话{% endblock %}
+{% block actions %}<button class="btn sm" onclick="newSession()">新会话</button>{% endblock %}
+{% block content %}
+
+<div class="chat-wrap">
+  <div class="card" style="flex:0 0 210px">
+    <h3>历史会话</h3>
+    <div id="slist">
+      {% for s in sessions %}
+      <div class="flex" style="justify-content:space-between">
+        <a href="#" onclick="loadSession({{ s.id }});return false">{{ s.title[:16] }}</a>
+        <button class="btn sm danger" onclick="delSession({{ s.id }})">×</button>
+      </div>
+      <div class="hint mb">{{ s.created_at }}</div>
+      {% else %}<p class="muted">暂无</p>{% endfor %}
+    </div>
+  </div>
+
+  <div class="card chat-main">
+    <div class="msgs" id="msgs">
+      <div class="msg"><div class="bubble">你好。我可以基于系统里的<b>任务配置、告警统计、最近告警明细</b>和你上传的<b>规范文档</b>回答问题，例如：
+「今天一共有多少条告警？」「未戴安全帽的告警集中在哪个任务？」「按规范，未戴安全帽应该怎么处理？」
+所有回答都只使用数据库里的真实数据，没有依据时会直接说明。</div></div>
+    </div>
+    <div class="sep"></div>
+    <div class="flex">
+      <textarea id="q" rows="2" style="flex:1" placeholder="输入问题，Ctrl+Enter 发送"></textarea>
+      <button class="btn primary" id="send" onclick="ask()">发送</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+let sid = 0;
+const msgs = document.getElementById('msgs');
+
+function bubble(role, text, refs) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  const b = document.createElement('div');
+  b.className = 'bubble';
+  b.textContent = text;
+  if (refs && refs.length) {
+    const r = document.createElement('div');
+    r.className = 'refs';
+    r.textContent = '依据：' + refs.map(x => `《${x.title}》片段${x.seq}`).join('，');
+    b.appendChild(r);
+  }
+  d.appendChild(b); msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+  return b;
+}
+
+async function ask() {
+  const q = document.getElementById('q');
+  const text = q.value.trim();
+  if (!text) return;
+  q.value = '';
+  bubble('user', text);
+  const holder = bubble('assistant', '思考中…');
+  const btn = document.getElementById('send');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/chat/ask', { method: 'POST', body: { question: text, session_id: sid } });
+    sid = r.session_id;
+    holder.textContent = r.answer || '(空回复)';
+    if (r.refs && r.refs.length) {
+      const el = document.createElement('div');
+      el.className = 'refs';
+      el.textContent = '依据：' + r.refs.map(x => `《${x.title}》片段${x.seq}`).join('，');
+      holder.appendChild(el);
+    }
+  } catch (e) {
+    holder.textContent = '请求失败：' + e.message;
+  } finally { btn.disabled = false; }
+}
+
+document.getElementById('q').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ask(); }
+});
+
+async function loadSession(id) {
+  const r = await api('/api/chat/sessions/' + id);
+  sid = id; msgs.innerHTML = '';
+  r.messages.forEach(m => {
+    let refs = [];
+    try { refs = JSON.parse(m.refs_json || '[]'); } catch (e) { /* 忽略 */ }
+    bubble(m.role, m.content, refs);
+  });
+}
+async function delSession(id) {
+  await api('/api/chat/sessions/' + id, { method: 'DELETE' });
+  toast('已删除'); location.reload();
+}
+function newSession() { sid = 0; msgs.innerHTML = ''; bubble('assistant', '新会话已开始。'); }
+</script>
+{% endblock %}

@@ -1,0 +1,30 @@
+# 小模型裁剪送审：YOLO 检出人员 -> 裁剪目标区域 -> VLM 判定是否未戴安全帽
+# 部署前请把 uri / weights / output_dir 改成目标机真实路径（见 docs/DEPLOY.md）。
+task_id: demo-ppe-small-crop
+source:
+  type: image
+  # 示例：离线工作站数据集；请替换
+  uri: /srv/data/datasets/factory-ppe/yolo/factory-ppe-20260724-v1/images/val
+mode: small_crop
+yolo:
+  weights: /srv/data/models/yolo/weights/yolo11m.pt
+  device: "0"
+  conf: 0.35
+  classes: [0]        # COCO person
+  imgsz: 640
+frame_stride: 1
+dwell_seconds: 0
+vlm_interval_seconds: 0
+vlm:
+  base_url: http://127.0.0.1:8001/v1
+  model: Qwen2.5-VL-7B-Instruct-AWQ
+  max_tokens: 512
+  temperature: 0
+target_actions: ["未佩戴安全帽", "未佩戴口罩"]
+alarm:
+  cooldown_seconds: 0    # 演示时不去重；生产建议 >= 30
+  # 建议改为仓库下 output/ 或数据盘专用目录
+  output_dir: ./output
+consumer_threads: 4
+max_frames: 8            # 演示只处理前 8 张，正式运行改为 0
+save_annotated: true

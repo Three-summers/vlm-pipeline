@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}分析任务 · {{ site_name }}{% endblock %}
+{% block h1 %}分析任务管理{% endblock %}
+{% block actions %}<a class="btn primary sm" href="/tasks/new">新建任务</a>{% endblock %}
+{% block content %}
+
+<div class="card">
+  <table>
+    <thead><tr>
+      <th>ID</th><th>任务</th><th>视频源</th><th>算法</th><th>模式</th>
+      <th>状态</th><th class="right">帧 / 检测 / VLM / 告警</th><th class="nowrap">操作</th>
+    </tr></thead>
+    <tbody>
+    {% for t in tasks %}
+    <tr>
+      <td>{{ t.id }}</td>
+      <td><a href="/tasks/{{ t.id }}">{{ t.name }}</a>
+        {% if t.autostart %}<span class="tag">自启</span>{% endif %}
+        {% if not t.enabled %}<span class="tag">已禁用</span>{% endif %}
+        {% if not t.config.target_actions %}<span class="tag">巡检模式</span>{% endif %}
+      </td>
+      <td class="muted">{{ t.source_name }}</td>
+      <td class="muted">{{ t.algo_name or '-' }}</td>
+      <td class="nowrap" title="{{ MODE_LABEL.get(t.mode, '') }}">{{ t.mode }}</td>
+      <td class="nowrap"><span class="badge {{ t.runtime.status }}" id="st-{{ t.id }}">{{ t.runtime.status }}</span>
+        {% if t.runtime.error %}<div class="hint" style="color:#fca5a5">{{ t.runtime.error[:60] }}</div>{% endif %}
+      </td>
+      <td class="right nowrap muted" id="stats-{{ t.id }}">
+        {{ t.runtime.stats.get('frames', 0) }} / {{ t.runtime.stats.get('detections', 0) }} /
+        {{ t.runtime.stats.get('vlm_calls', 0) }} / {{ t.runtime.stats.get('alarms', 0) }}
+      </td>
+      <td class="nowrap">
+        <button class="btn sm" onclick="act({{ t.id }}, 'start')">启动</button>
+        <button class="btn sm" onclick="act({{ t.id }}, 'stop')">停止</button>
+        <button class="btn sm" onclick="showLog({{ t.id }})">日志</button>
+        <a class="btn sm" href="/wall#task-{{ t.id }}">预览</a>
+        <button class="btn sm danger" onclick="confirmDo('确认删除任务 {{ t.name }}？告警记录会保留。', () => delTask({{ t.id }}))">删除</button>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="8" class="muted">还没有任务，点右上「新建任务」</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card mt" id="logbox" style="display:none">
+  <h3>任务日志 <span id="logtitle" class="muted"></span>
+    <button class="btn sm right" onclick="document.getElementById('logbox').style.display='none'">关闭</button></h3>
+  <pre class="log" id="logtext">加载中…</pre>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+const IDS = [{{ tasks | map(attribute='id') | join(', ') }}];
+
+async function act(id, action) {
+  await api(`/api/tasks/${id}/${action}`, { method: 'POST' });
+  toast(action === 'start' ? '已下发启动' : '已下发停止');
+  setTimeout(refresh, 1200);
+}
+async function delTask(id) {
+  await api('/api/tasks/' + id, { method: 'DELETE' });
+  toast('已删除'); location.reload();
+}
+let logTid = 0;
+async function showLog(id) {
+  logTid = id;
+  document.getElementById('logbox').style.display = '';
+  document.getElementById('logtitle').textContent = '#' + id;
+  const r = await api(`/api/tasks/${id}/log?lines=300`);
+  const el = document.getElementById('logtext');
+  el.textContent = r.log;
+  el.scrollTop = el.scrollHeight;
+}
+async function refresh() {
+  for (const id of IDS) {
+    try {
+      const r = await api('/api/tasks/' + id + '/status');
+      const st = document.getElementById('st-' + id);
+      st.textContent = r.status; st.className = 'badge ' + r.status;
+      const s = r.stats || {};
+      document.getElementById('stats-' + id).textContent =
+        `${s.frames || 0} / ${s.detections || 0} / ${s.vlm_calls || 0} / ${s.alarms || 0}`;
+    } catch (e) { /* 单个任务失败不影响其他 */ }
+  }
+  if (logTid && document.getElementById('logbox').style.display !== 'none') showLog(logTid);
+}
+poll(refresh, 5000);
+</script>
+{% endblock %}
