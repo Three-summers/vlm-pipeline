@@ -1,6 +1,6 @@
 [Unit]
 Description=VLM Pipeline Web platform (Flask + Gunicorn)
-Documentation=file:///srv/data/projects/vlm-pipeline/docs/DEPLOY.md
+Documentation=https://github.com/<your-repo>/vlm-pipeline/docs/DEPLOY.md
 Wants=network-online.target vlm-server.service
 After=network-online.target vlm-server.service
 # VLM 推理服务建议在 Web 之前就绪；若暂时无 GPU 可去掉 Requires
@@ -8,23 +8,25 @@ Requires=vlm-server.service
 
 [Service]
 Type=simple
-# Edit User/Group and paths for your host (see docs/DEPLOY.md).
+# == 部署前必须修改以下内容 ==
+# User/Group：替换为实际运行用户
 User=CHANGE_ME
 Group=CHANGE_ME
-WorkingDirectory=/srv/data/projects/vlm-pipeline
+# WorkingDirectory、ExecStart*、PATH、各 VLMP_*/VLM_*：替换 <PROJECT_ROOT> 为仓库实际路径，替换 <VLMP_ENV> 为 YOLO/Web Python venv 路径
+WorkingDirectory=<PROJECT_ROOT>
 
 Environment=PYTHONUNBUFFERED=1
-Environment=PATH=/opt/offline/envs/yolo-py311/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/srv/data/projects/vlm-pipeline
-Environment=VLMP_ROOT=/srv/data/projects/vlm-pipeline
-Environment=VLMP_DB=/srv/data/projects/vlm-pipeline/data/vlmp.db
-Environment=VLMP_PYTHON=/opt/offline/envs/yolo-py311/bin/python
+Environment=PATH=<VLMP_ENV>/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=<PROJECT_ROOT>
+Environment=VLMP_ROOT=<PROJECT_ROOT>
+Environment=VLMP_DB=<PROJECT_ROOT>/data/vlmp.db
+Environment=VLMP_PYTHON=<VLMP_ENV>/bin/python
 Environment=VLMP_PORT=8090
-Environment=VLMP_ENV=/opt/offline/envs/yolo-py311
+Environment=VLMP_ENV=<VLMP_ENV>
 
-ExecStartPre=-/usr/bin/mkdir -p /srv/data/projects/vlm-pipeline/logs /srv/data/projects/vlm-pipeline/data /srv/data/projects/vlm-pipeline/output
-ExecStartPre=/opt/offline/envs/yolo-py311/bin/python /srv/data/projects/vlm-pipeline/scripts/vlm-web-init.py
-ExecStart=/srv/data/projects/vlm-pipeline/scripts/run-web.sh 8090
+ExecStartPre=-/usr/bin/mkdir -p <PROJECT_ROOT>/logs <PROJECT_ROOT>/data <PROJECT_ROOT>/output
+ExecStartPre=<VLMP_ENV>/bin/python <PROJECT_ROOT>/scripts/vlm-web-init.py
+ExecStart=<PROJECT_ROOT>/scripts/run-web.sh 8090
 
 Restart=on-failure
 RestartSec=10

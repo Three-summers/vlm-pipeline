@@ -1,25 +1,27 @@
 [Unit]
 Description=vLLM VLM inference server (Qwen2.5-VL-7B)
-Documentation=file:///srv/data/projects/vlm-pipeline/docs/DEPLOY.md
+Documentation=https://github.com/<your-repo>/vlm-pipeline/docs/DEPLOY.md
 Wants=network-online.target nvidia-persistenced.service
 After=network-online.target nvidia-persistenced.service
 
 [Service]
 Type=simple
-# Edit User/Group and paths for your host (see docs/DEPLOY.md).
+# == 部署前必须修改以下内容 ==
+# User/Group：替换为实际运行用户
 User=CHANGE_ME
 Group=CHANGE_ME
-WorkingDirectory=/srv/data/projects/vlm-pipeline
+# WorkingDirectory、ExecStart、PATH、各 VLMP_*/VLM_*：替换 <PROJECT_ROOT> 为仓库实际路径
+WorkingDirectory=<PROJECT_ROOT>
 
 Environment=PYTHONUNBUFFERED=1
-Environment=PATH=/srv/data/projects/vlm-pipeline/venv/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=VLMP_ROOT=/srv/data/projects/vlm-pipeline
-Environment=VLM_MODEL_DIR=/srv/data/projects/vlm-pipeline/models/Qwen2.5-VL-7B-Instruct-AWQ
-Environment=VLM_VENV=/srv/data/projects/vlm-pipeline/venv
+Environment=PATH=<PROJECT_ROOT>/.venv-vllm/bin:/usr/local/cuda/bin:/opt/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=VLMP_ROOT=<PROJECT_ROOT>
+Environment=VLM_MODEL_DIR=<PROJECT_ROOT>/models/Qwen2.5-VL-7B-Instruct-AWQ
+Environment=VLM_VENV=<PROJECT_ROOT>/.venv-vllm
 Environment=VLM_GPU_UTIL=0.55
 Environment=VLM_MAX_LEN=16384
 
-ExecStart=/srv/data/projects/vlm-pipeline/scripts/run-vlm-server.sh 8001
+ExecStart=<PROJECT_ROOT>/scripts/run-vlm-server.sh 8001
 
 # vLLM 加载 7B AWQ 模型约需 60-90s
 TimeoutStartSec=300

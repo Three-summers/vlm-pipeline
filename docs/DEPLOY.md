@@ -1,47 +1,60 @@
-# 部署指南：必备依赖与安装顺序
+# 部署指南
 
-本文说明如何部署 **vlm-pipeline**（YOLO + VLM 视频分析引擎与 Web 管理平台），以及仓库**不包含**、但运行所**必须**的外部依赖。
-
----
-
-## 1. 本仓库提供什么 / 不提供什么
-
-### 提供（可 Git 版本化）
-
-| 内容 | 路径 |
-|------|------|
-| 分析引擎 | `vlm_pipeline.py`、`vlmp/` |
-| Web 平台 | `server/`（Flask + Jinja + 静态资源） |
-| 启动与自检脚本 | `scripts/` |
-| 示例 / 模板配置 | `configs/` |
-| systemd 单元与安装脚本 | `deploy/` |
-| 本文档与 README | `docs/`、`README.md` |
-
-### 不提供（必须在目标机另行准备）
-
-| 必备项 | 典型位置 / 规模 | 谁需要 |
-|--------|-----------------|--------|
-| **NVIDIA GPU** | 建议 ≥ 24 GB；原现场 RTX 5090 32GB，vLLM 约占 55% 显存 | 全部真实分析 |
-| **CUDA + 驱动** | 与 vLLM / torch 匹配；现场 12.8+ | vLLM、YOLO |
-| **YOLO Python 环境** | 默认 `/opt/offline/envs/yolo-py311` | Web、分析子进程、YOLO |
-| **vLLM 专用 venv** | 默认 `$VLMP_ROOT/venv`（数 GB 级） | `scripts/run-vlm-server.sh` |
-| **VLM 权重** | 默认 `$VLMP_ROOT/models/Qwen2.5-VL-7B-Instruct-AWQ`（约 6.5GB AWQ） | Consumer / large 模式 |
-| **YOLO 权重** | 常与 yolo-workflow 共用，如 `/srv/data/models/yolo/weights/` | small_* 模式 |
-| **输入源** | 图片目录 / 视频文件 / RTSP | 任务运行 |
-| **（可选）离线 wheelhouse** | `/srv/offline/current/python/...` | 断网装包 |
-
-仓库**故意不包含**：生产 `data/vlmp.db`、访问日志、任务 output、模型权重、venv、初始管理员密码文件。
+本文说明如何部署 **vlm-pipeline**（YOLO + VLM 视频分析引擎与 Web 管理平台），列出**最低要求**与安装顺序。
 
 ---
 
-## 2. 组件关系
+## 1. 最低硬件要求
+
+| 组件 | 最低 | 推荐 | 说明 |
+|------|------|------|------|
+| **GPU 显存** | 8 GB（仅 small_only）<br>12 GB（含 VLM 模式） | 24 GB+ | 仅跑 YOLO 不触发 VLM 只需普通显卡；启用 VLM 时，vLLM + Qwen2.5-VL-7B-AWQ 约占 8–10 GB，YOLO 额外约 2 GB |
+| **系统内存** | 16 GB | 32 GB+ | vLLM 加载模型与 KV cache 需要额外 CPU 内存 |
+| **磁盘可用空间** | 20 GB | 50 GB+ SSD | 模型权重 ~7 GB + YOLO 权重 + 运行输出与日志 |
+| **CUDA** | 11.8+ | 12.x+ | 需与 PyTorch、vLLM 版本匹配 |
+| **NVIDIA 驱动** | ≥ 525 | 最新稳定版 | 需对应 CUDA 版本 |
+
+## 2. 软件环境
+
+| 组件 | 版本 | 用途 | 说明 |
+|------|------|------|------|
+| 操作系统 | Linux (x86_64) | 运行环境 | 需要 NVIDIA 驱动与 CUDA 支持 |
+| Python 环境 A | 3.11 | YOLO + Web | Flask、OpenCV、Ultralytics、PyTorch 等 |
+| Python 环境 B | 3.12 | vLLM 推理服务 | `vllm` 包，独立 venv 避免依赖冲突 |
+
+> **注意**：两个 Python 环境是独立的 —— 环境 A 供 Web 平台和分析子进程使用，环境 B 仅供 vLLM 推理服务使用，避免 vLLM 与 YOLO 栈的依赖互相拖垮。
+
+## 3. 模型权重（需自行下载）
+
+| 模型 | 大小 | 用途 | 来源 |
+|------|------|------|------|
+| **Qwen2.5-VL-7B-Instruct-AWQ** | ~6.5 GB | 所有 VLM 模式 | HuggingFace / ModelScope：`Qwen/Qwen2.5-VL-7B-Instruct-AWQ` |
+| **YOLO 权重**（如 `yolo11m.pt`） | ~50–100 MB | `small_*` 模式 | Ultralytics 官方 |
+| **YOLO 权重**（如 `yolo11n.pt`） | ~5 MB | 轻量 small_only | Ultralytics 官方 |
+
+## 4. 本仓库不提供的文件
+
+以下内容需在目标机自行准备，**不要**提交到 Git：
+
+| 文件/目录 | 说明 |
+|-----------|------|
+| `models/` 下 VLM 权重 | Qwen2.5-VL-7B-Instruct-AWQ |
+| `venv/` | vLLM 专用 Python 环境 |
+| YOLO Python 环境 | `VLMP_ENV` 指向的 venv |
+| YOLO `.pt` 权重文件 | 可放在任意路径，Web UI 中登记 |
+| `data/vlmp.db*` | 生产数据库 |
+| `output/`、`logs/` | 运行时输出与日志 |
+
+---
+
+## 5. 组件架构
 
 ```text
                     ┌─────────────────────────┐
    GPU 显存         │  vLLM (:8001)           │  ← scripts/run-vlm-server.sh
-   ~55% 预留        │  Qwen2.5-VL-7B-AWQ      │     环境: $VLM_VENV
+   （可调比例）     │  Qwen2.5-VL-7B-AWQ      │     环境: $VLM_VENV
                     └───────────▲─────────────┘
-                                │ OpenAI API
+                                │ OpenAI 兼容 API
 ┌──────────────┐    ┌───────────┴─────────────┐
 │ YOLO 权重    │───▶│  分析子进程              │  ← vlm_pipeline.py
 │ + yolo env   │    │  Producer→Consumer→Saver │     环境: $VLMP_ENV
@@ -53,159 +66,167 @@
                     └─────────────────────────┘
 ```
 
-两个 Python 环境是常见拆法：
-
-- **`VLMP_ENV`（yolo-py311）**：Flask/gunicorn、OpenCV、Ultralytics、任务子进程  
-- **`VLM_VENV`（项目内 venv）**：仅 vLLM 服务，避免与 YOLO 栈互相拖垮依赖
-
 ---
 
-## 3. 路径与环境变量
+## 6. 环境变量
 
-| 变量 | 默认 | 含义 |
-|------|------|------|
-| `VLMP_ROOT` | 仓库根（脚本自动探测） | 项目根目录 |
-| `VLMP_ENV` | `/opt/offline/envs/yolo-py311` | YOLO + Web 的 Python 前缀 |
-| `VLMP_PYTHON` | `$VLMP_ENV/bin/python` | 分析子进程解释器（run-web 会设置） |
-| `VLMP_DB` | `$VLMP_ROOT/data/vlmp.db` | SQLite 主库 |
+所有变量均可选，未设置时使用默认值：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `VLMP_ROOT` | 脚本自动探测（仓库根目录） | 项目根目录 |
+| `VLMP_ENV` | `$VLMP_ROOT/.venv-web` | YOLO + Web 的 Python venv 路径 |
+| `VLMP_PYTHON` | `$VLMP_ENV/bin/python` | 分析子进程解释器 |
+| `VLMP_DB` | `$VLMP_ROOT/data/vlmp.db` | SQLite 主库路径 |
 | `VLMP_PORT` | `8090` | Web 端口 |
-| `VLM_VENV` | `$VLMP_ROOT/venv` | 含 `vllm` 的环境 |
+| `VLM_VENV` | `$VLMP_ROOT/.venv-vllm` → `$VLMP_ROOT/venv` | 含 `vllm` 的 Python venv |
 | `VLM_MODEL_DIR` | `$VLMP_ROOT/models/Qwen2.5-VL-7B-Instruct-AWQ` | VLM 权重目录 |
-| `VLM_GPU_UTIL` | `0.55` | vLLM `gpu_memory_utilization` |
-| `VLM_MAX_LEN` | `16384` | 最大上下文 |
-
-示例配置里的数据路径请改成你机器上的真实目录（见 `configs/*.yaml` 注释）。
+| `VLM_GPU_UTIL` | `0.55` | vLLM `gpu_memory_utilization`（给同卡 YOLO 留显存） |
+| `VLM_MAX_LEN` | `16384` | 最大上下文长度 |
 
 ---
 
-## 4. 推荐部署顺序
+## 7. 部署步骤
 
-### 步骤 1 — 硬件与驱动
-
-- 安装 NVIDIA 驱动与 CUDA（需满足所选 vLLM / torch 版本）。
-- 确认 `nvidia-smi` 可用，显存足够同时跑 vLLM（~55%）+ YOLO。
-
-### 步骤 2 — 放置本仓库
-
-建议（与离线工作站一致）：
+### 步骤 1 — 克隆仓库
 
 ```bash
-sudo install -d -o "$USER" -g "$USER" /srv/data/projects
-git clone <your-fork-or-url> /srv/data/projects/vlm-pipeline
-cd /srv/data/projects/vlm-pipeline
+git clone <your-repo-url> /path/to/vlm-pipeline
+cd /path/to/vlm-pipeline
+mkdir -p logs data output models
 ```
 
-任意路径亦可，只要设置 `VLMP_ROOT` 或直接在该目录执行脚本。
-
-### 步骤 3 — YOLO / Web 环境（`VLMP_ENV`）
-
-必须能 `import` 至少：Flask（或 gunicorn）、OpenCV、PyYAML、Ultralytics/torch（若跑 YOLO 模式）。
-
-断网现场通常直接使用已有：
+### 步骤 2 — 安装 NVIDIA 驱动与 CUDA
 
 ```bash
-export VLMP_ENV=/opt/offline/envs/yolo-py311
-"$VLMP_ENV/bin/python" -c "import flask, cv2, yaml; print('ok')"
+# 确认 GPU 可用
+nvidia-smi
+# 确认 CUDA 版本
+nvcc --version
 ```
 
-联网自建时，在 3.11 venv 中安装与现场接近的版本（torch 需匹配 CUDA）。本仓库不绑定单一 `requirements.txt` 锁文件时，以你工作站已验证的 yolo 环境为准；可与 **yolo-workflow** 共用同一环境。
+### 步骤 3 — 准备 YOLO / Web 环境（环境 A）
 
-### 步骤 4 — vLLM 环境与模型（`VLM_VENV` + 权重）
+创建 Python 3.11 venv，安装核心依赖：
 
 ```bash
-cd "$VLMP_ROOT"
-python3.12 -m venv venv          # 版本按 vLLM 文档选择
-source venv/bin/activate
-# 按 https://docs.vllm.ai 安装匹配 CUDA 的 vllm
-# 下载 AWQ 权重到 models/Qwen2.5-VL-7B-Instruct-AWQ/
-# 来源示例：ModelScope 或 Hugging Face  Qwen/Qwen2.5-VL-7B-Instruct-AWQ
+python3.11 -m venv .venv-web
+source .venv-web/bin/activate
+pip install torch opencv-python ultralytics flask gunicorn pyyaml numpy werkzeug requests
 ```
 
-断网时从离线发布或移动硬盘导入 `venv` 与 `models/`，**不要**把它们 commit 进 Git。
+验证：
+```bash
+".venv-web/bin/python" -c "import flask, cv2, ultralytics, torch; print('ok')"
+```
 
-### 步骤 5 — YOLO 权重（small_* 模式）
+### 步骤 4 — 准备 vLLM 环境与模型（环境 B）
 
 ```bash
-# 示例
-ls /srv/data/models/yolo/weights/yolo11m.pt
+cd /path/to/vlm-pipeline
+
+# 创建 vLLM venv
+python3.12 -m venv .venv-vllm
+source .venv-vllm/bin/activate
+# 按 https://docs.vllm.ai 安装匹配 CUDA 版本的 vllm
+pip install vllm
+
+# 下载 VLM 权重到 models/
+# 方式一：huggingface-cli download Qwen/Qwen2.5-VL-7B-Instruct-AWQ --local-dir models/Qwen2.5-VL-7B-Instruct-AWQ
+# 方式二：modelscope download Qwen/Qwen2.5-VL-7B-Instruct-AWQ --local_dir models/Qwen2.5-VL-7B-Instruct-AWQ
 ```
 
-在 Web「算法管理」中扫描登记，或在 YAML 的 `yolo.weights` 填写绝对路径。
+**小显存调优**：若 GPU 显存紧张，可提高 `VLM_GPU_UTIL` 至 `0.85–0.9`（vLLM 占用更多显存），并降低 `VLM_MAX_LEN` 至 `8192`。
+
+### 步骤 5 — 准备 YOLO 权重
+
+```bash
+# 下载 YOLO 权重到任意目录，后续在 Web UI 中登记
+wget https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11m.pt -P /path/to/yolo/weights/
+```
 
 ### 步骤 6 — 启动
 
 ```bash
 cd /path/to/vlm-pipeline
-mkdir -p logs data output models
 
-# 终端 1：VLM（首次加载 60–90s）
+# 终端 1：启动 VLM 推理服务（首次加载 60–90 秒）
 ./scripts/run-vlm-server.sh 8001
 
-# 终端 2：Web
+# 终端 2：启动 Web 平台
 ./scripts/run-web.sh 8090
 ```
 
-- 浏览器：`http://<主机>:8090`  
-- 首次启动会创建管理员；初始密码打印在初始化输出 / 历史上可能写在 `logs/initial-admin-password.txt`——**登录后立刻改密并删除该文件，且勿提交 Git**。  
-- 探活：`curl -s http://127.0.0.1:8090/healthz`
+- 浏览器访问：`http://<主机IP>:8090`
+- 首次启动自动创建管理员，密码打印在终端输出中
+- 登录后**立即修改密码**
+- 健康检查：`curl -s http://127.0.0.1:8090/healthz`
 
 ### 步骤 7 — 验证
 
 ```bash
-"$VLMP_ENV/bin/python" scripts/smoke_web.py
-# 端到端（平台已启动、且有演示数据路径时）：
-# VLMP_ADMIN_PW=... "$VLMP_ENV/bin/python" scripts/e2e_check.py
-```
+# 冒烟测试（无需 GPU/VLM）
+".venv-web/bin/python" scripts/smoke_web.py
 
-引擎也可脱离 Web：
-
-```bash
-export PATH="$VLMP_ENV/bin:$PATH"
+# 引擎自检（需 VLM 服务已启动，先修改 config yaml 中的路径）
+export PATH="$(pwd)/.venv-web/bin:$PATH"
 python3 vlm_pipeline.py selftest --config configs/demo-ppe-small-crop.yaml
-# 先按机器改 yaml 中的 uri / weights / output_dir
 ```
 
-### 步骤 8 — 可选 systemd
+引擎也可脱离 Web 独立运行：
+```bash
+export PATH="$(pwd)/.venv-web/bin:$PATH"
+python3 vlm_pipeline.py run --config configs/demo-ppe-small-crop.yaml
+```
 
-1. 编辑 `deploy/vlm-server.service`、`deploy/vlm-web.service`：  
-   - 将 `User=` / `Group=` 的 `CHANGE_ME` 改为实际用户  
-   - 核对 `WorkingDirectory`、`VLMP_*`、`VLM_*`、`PATH`  
-2. `sudo deploy/install.sh`  
-3. `sudo systemctl start vlm-server vlm-web`
+### 步骤 8 — （可选）安装 systemd 服务
 
----
-
-## 5. 配置文件怎么改
-
-`configs/` 内示例仍可能带有 `/srv/data/...` 占位，表示**原离线工作站布局**，不是你的机器保证存在的路径。部署时请：
-
-1. 复制一份 yaml，改 `source.uri`、`yolo.weights`、`alarm.output_dir`  
-2. RTSP 模板中的账号密码**只放本地**，不要推送远程仓库  
-3. `output_dir` 建议指向本仓库下 `output/` 或数据盘上的专用目录  
-
----
-
-## 6. 安全与 Git 边界
-
-**可提交**：源码、模板、示例配置（无真实口令）、deploy 单元模板、文档。  
-
-**禁止提交**：
-
-- `data/vlmp.db*`、任务 `output/`、`logs/`（尤其含密码的文件）  
-- `venv/`、`models/` 权重  
-- RTSP URL 中的账号密码、开放 API 令牌、VLM endpoint key  
-
-`.gitignore` 已覆盖常见项；`git status` 仍应人工确认。
+1. 编辑 `deploy/vlm-server.service` 和 `deploy/vlm-web.service`：
+   - 将 `<VLMP_ENV>` 替换为实际 YOLO/Web 环境路径
+   - 将 `<PROJECT_ROOT>` 替换为仓库实际路径
+   - 将 `CHANGE_ME` 替换为实际运行用户/组
+2. 安装：
+```bash
+sudo deploy/install.sh
+sudo systemctl start vlm-server vlm-web
+```
 
 ---
 
-## 7. 与 yolo-workflow 的关系
+## 8. 配置文件修改
 
-| | yolo-workflow | vlm-pipeline |
-|--|---------------|--------------|
-| 职责 | 标注、数据集、训练、离线推理 CLI | 视频/图片流上的 YOLO+VLM 分析与 Web |
-| CVAT | 本仓 deploy 模板管理 | 不依赖 |
-| 环境 | `yolo-py311` | Web/YOLO 可共用；vLLM 单独 venv |
-| 权重 | `/srv/data/models/yolo/weights` | 可读同一目录 |
+`configs/` 下的示例 YAML 包含占位路径，部署时需根据实际环境修改：
 
-两者应保持**两个 Git 仓库**；通过约定路径与环境变量协作，而不是 monorepo 强耦合。
+| 字段 | 修改为 |
+|------|--------|
+| `source.uri` | 实际图片目录 / 视频文件 / RTSP 地址 |
+| `yolo.weights` | YOLO `.pt` 权重的绝对路径 |
+| `alarm.output_dir` | 告警输出目录（建议指向 `output/` 子目录） |
+
+> **注意**：RTSP 地址若含用户名密码，仅保留在本地 YAML 中，**切勿**提交到 Git。
+
+---
+
+## 9. 安全边界
+
+**可以提交 Git**：源码、模板 YAML、示例配置（无真实密码）、deploy 模板、文档。
+
+**禁止提交 Git**：
+- `data/vlmp.db*`、`output/`、`logs/`（尤其含密码文件）
+- `venv/`、`models/` 目录下所有权重文件
+- RTSP URL 中的账号密码、API 令牌、VLM endpoint key
+
+`.gitignore` 已覆盖常见项，但 `git add` 前仍需人工确认。
+
+---
+
+## 10. 故障排查
+
+| 问题 | 检查 |
+|------|------|
+| `nvidia-smi` 无输出 | 驱动未安装或与内核不匹配 |
+| vLLM 启动 OOM | 降低 `VLM_GPU_UTIL` 或 `VLM_MAX_LEN`，关闭其他 GPU 进程 |
+| vLLM 找不到 CUDA | 确认 `nvcc --version` 版本，确认 venv 内 vllm 与 CUDA 匹配 |
+| Web 启动报找不到模块 | 确认 `VLMP_ENV` 指向正确 venv，venv 内已安装 Flask/OpenCV 等 |
+| YOLO 加载失败 | 确认 `.pt` 文件路径正确，Ultralytics 版本兼容 |
+| 分析任务无告警 | 检查 VLM endpoint 配置（Web → 端点管理），确认 vLLM 服务可达 |

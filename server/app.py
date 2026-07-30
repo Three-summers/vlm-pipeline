@@ -323,7 +323,7 @@ def api_source_test(sid):
 # 算法（YOLO 权重）
 # ---------------------------------------------------------------------------
 
-WEIGHT_DIRS = ["/srv/data/models/yolo/weights", str(ROOT / "models" / "yolo")]
+WEIGHT_DIRS = [str(ROOT / "models" / "yolo"), str(Path.home() / "models" / "yolo")]
 
 
 @app.route("/algorithms")

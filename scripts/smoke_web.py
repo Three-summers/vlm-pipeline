@@ -2,7 +2,7 @@
 """Web 平台冒烟测试：在临时数据库上跑一遍页面渲染与主要 API。
 
 不联网、不启动分析子进程、不调用 VLM，只验证导入、SQL、模板渲染与权限。
-用法： /opt/offline/envs/yolo-py311/bin/python scripts/smoke_web.py
+用法： <VLMP_ENV>/bin/python scripts/smoke_web.py
 """
 
 import os
@@ -250,7 +250,7 @@ def make_video(path: Path):
 
 
 def find_weights():
-    for d in ("/srv/data/models/yolo", str(Path.home() / "models"), "./weights"):
+    for d in (str(Path.home() / "models" / "yolo"), "./weights", "./models/yolo"):
         p = Path(d)
         if p.is_dir():
             for w in sorted(p.glob("*.pt")):

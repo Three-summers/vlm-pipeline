@@ -7,8 +7,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [ "$(id -u)" -eq 0 ] || { echo "请用 sudo 运行" >&2; exit 1; }
 
-if grep -q 'CHANGE_ME' "$HERE/vlm-server.service" "$HERE/vlm-web.service"; then
-  echo "请先把 deploy/vlm-*.service 里的 User/Group=CHANGE_ME 改成实际系统用户。" >&2
+if grep -qE 'CHANGE_ME|<PROJECT_ROOT>|<VLMP_ENV>' "$HERE/vlm-server.service" "$HERE/vlm-web.service"; then
+  echo "请先把 deploy/vlm-*.service 里的占位符改成实际值（User/Group、<PROJECT_ROOT>、<VLMP_ENV>）。" >&2
+  echo "详见 docs/DEPLOY.md。" >&2
   exit 1
 fi
 

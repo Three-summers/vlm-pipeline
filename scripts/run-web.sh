@@ -1,18 +1,38 @@
 #!/usr/bin/env bash
 # 启动 Web 平台（gunicorn）。用法：scripts/run-web.sh [端口]
 #
-# 环境变量（均可选）：
+# 环境变量（均可选，覆盖自动探测）：
 #   VLMP_ROOT / 默认：仓库根目录
-#   VLMP_ENV  / 默认：/opt/offline/envs/yolo-py311 （YOLO + Web 依赖环境）
+#   VLMP_ENV  / 默认：$ROOT/.venv-web
 #   VLMP_DB   / 默认：$ROOT/data/vlmp.db
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT="${VLMP_ROOT:-$ROOT}"
 PORT="${1:-8090}"
-ENV_DIR="${VLMP_ENV:-/opt/offline/envs/yolo-py311}"
-PY="$ENV_DIR/bin/python"
-GUNICORN="$ENV_DIR/bin/gunicorn"
+
+_detect_venv() {
+  if [ -n "${VLMP_ENV:-}" ]; then
+    echo "$VLMP_ENV"
+  elif [ -x "$ROOT/.venv-web/bin/python" ]; then
+    echo "$ROOT/.venv-web"
+  else
+    echo ""
+  fi
+}
+ENV_DIR="$(_detect_venv)"
+
+if [ -n "$ENV_DIR" ]; then
+  PY="$ENV_DIR/bin/python"
+  GUNICORN="$ENV_DIR/bin/gunicorn"
+else
+  PY="$(command -v python3 2>/dev/null || true)"
+  GUNICORN="$(command -v gunicorn 2>/dev/null || true)"
+  if [ -z "$PY" ]; then
+    echo "未设置 VLMP_ENV 且找不到 python3，请创建 $ROOT/.venv-web 或设置 VLMP_ENV" >&2
+    exit 1
+  fi
+fi
 
 [ -x "$PY" ] || { echo "找不到 Python 环境: $PY（可设置 VLMP_ENV）" >&2; exit 1; }
 

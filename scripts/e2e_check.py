@@ -127,11 +127,12 @@ def main():
     print("\n== 视频源 ==")
     IMGDIR = os.environ.get(
         "VLMP_E2E_IMGDIR",
-        "/srv/data/datasets/factory-ppe/yolo/factory-ppe-20260724-v1/images/val",
+        # 默认值需按实际环境修改，或通过环境变量覆盖
+        "./output/test-images",
     )
     CLIP = os.environ.get(
         "VLMP_E2E_CLIP",
-        "/srv/data/projects/vlm-pipeline/output/test-clip.mp4",
+        "./output/test-clip.mp4",
     )
     s1 = api("/api/sources", {"name": "E2E 图片序列", "type": "image",
                               "uri": IMGDIR, "location": "车间"}).get("id")

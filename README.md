@@ -23,26 +23,27 @@ vlm-pipeline/
 ├── data/                  # 运行时 SQLite（空目录占位，不提交库文件）
 ├── models/                # 放置 VLM 权重（不提交）
 ├── logs/ output/          # 运行时（不提交）
-└── venv/                  # 本地 vLLM 环境（不提交，需自建）
+├── .venv-vllm/            # vLLM 环境（不提交，自建）
+├── .venv-web/             # YOLO/Web 环境（不提交，自建）
 ```
 
 ## 最低必备
 
-| 类别 | 要求 |
-|------|------|
-| GPU | NVIDIA，建议 ≥24GB；vLLM 默认占用约 55% 显存 |
-| 环境 A | `VLMP_ENV`：Python 3.11 + YOLO/Web 依赖（可与 yolo-workflow 共用） |
-| 环境 B | `VLM_VENV`：含 vLLM 的 venv |
-| 模型 | Qwen2.5-VL-7B-Instruct-AWQ +（small 模式）YOLO `.pt` 权重 |
-| 输入 | 图片目录 / 视频 / RTSP |
+| 类别 | 最低要求 |
+|------|----------|
+| GPU | NVIDIA，8 GB 显存（仅 YOLO）/ 12 GB+（含 VLM） |
+| 环境 A | `VLMP_ENV`：Python 3.11 + Flask / OpenCV / Ultralytics / PyTorch |
+| 环境 B | `VLM_VENV`：Python 3.12 + `vllm` |
+| 模型 | Qwen2.5-VL-7B-Instruct-AWQ（~6.5 GB）+ YOLO `.pt` 权重（small_* 模式） |
+| 输入 | 图片目录 / 视频文件 / RTSP 流 |
 
-完整清单与步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+> 不依赖 MySQL、Redis、MinIO 等外部服务 —— 全部使用单机轻量替代。完整硬件清单与安装步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 快速启动（依赖已就绪时）
 
 ```bash
 cd /path/to/vlm-pipeline
-./scripts/run-vlm-server.sh 8001          # 等模型加载完成
+./scripts/run-vlm-server.sh 8001          # 等模型加载完成（60-90s）
 ./scripts/run-web.sh 8090                 # http://<host>:8090
 ```
 
@@ -53,13 +54,13 @@ cd /path/to/vlm-pipeline
 验证：
 
 ```bash
-"$VLMP_ENV/bin/python" scripts/smoke_web.py
+.venv-web/bin/python scripts/smoke_web.py
 ```
 
-引擎单独跑（先改 yaml 路径）：
+引擎单独跑（先修改 yaml 配置中的路径）：
 
 ```bash
-export PATH="${VLMP_ENV:-/opt/offline/envs/yolo-py311}/bin:$PATH"
+export PATH="$(pwd)/.venv-web/bin:$PATH"
 python3 vlm_pipeline.py selftest --config configs/demo-ppe-small-crop.yaml
 python3 vlm_pipeline.py run      --config configs/demo-ppe-small-crop.yaml
 ```
@@ -115,4 +116,4 @@ CVAT / 训练 / 数据集版本化见独立仓库 **yolo-workflow**。本仓可�
 
 ## 来源说明
 
-整理自离线工作站项目快照；已去除生产库、日志、密钥与主机专用账号。运行时路径通过环境变量与配置覆盖，默认值仍兼容 `/srv/data` + `/opt/offline/envs` 布局。
+整理自离线工作站项目快照；已去除生产库、日志、密钥与主机专用账号。运行时路径通过环境变量与配置覆盖，默认值可兼容原工作站布局，新部署请按 [docs/DEPLOY.md](docs/DEPLOY.md) 设置。

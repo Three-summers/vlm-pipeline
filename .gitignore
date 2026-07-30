@@ -5,6 +5,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.venv-vllm/
+.venv-web/
 venv/
 tools-venv/
 
