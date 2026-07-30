@@ -81,8 +81,10 @@
 | `VLMP_PORT` | `8090` | Web 端口 |
 | `VLM_VENV` | `$VLMP_ROOT/.venv-vllm` → `$VLMP_ROOT/venv` | 含 `vllm` 的 Python venv |
 | `VLM_MODEL_DIR` | `$VLMP_ROOT/models/Qwen2.5-VL-7B-Instruct-AWQ` | VLM 权重目录 |
-| `VLM_GPU_UTIL` | `0.55` | vLLM `gpu_memory_utilization`（给同卡 YOLO 留显存） |
-| `VLM_MAX_LEN` | `16384` | 最大上下文长度 |
+| `VLM_GPU_UTIL` | `0.85` | vLLM `gpu_memory_utilization`；12 GiB 显卡运行 7B AWQ 所需的基准值 |
+| `VLM_MAX_LEN` | `8192` | 最大上下文长度；可按可用 KV cache 调整 |
+| `VLM_ENFORCE_EAGER` | `1` | 跳过 CUDA Graph profiling/编译，缩短启动时间并减少显存占用；设为 `0` 可恢复 |
+| `VLLM_USE_V2_MODEL_RUNNER` | `0` | 规避 WSL + Blackwell 上的 `UVA is not available`；环境支持 UVA 后可设为 `1` |
 
 ---
 
@@ -136,7 +138,7 @@ pip install vllm
 # 方式二：modelscope download Qwen/Qwen2.5-VL-7B-Instruct-AWQ --local_dir models/Qwen2.5-VL-7B-Instruct-AWQ
 ```
 
-**小显存调优**：若 GPU 显存紧张，可提高 `VLM_GPU_UTIL` 至 `0.85–0.9`（vLLM 占用更多显存），并降低 `VLM_MAX_LEN` 至 `8192`。
+**小显存调优**：`gpu_memory_utilization` 是 vLLM 可用显存上限，不是节省显存的比例。若出现 `No available memory for the cache blocks`，需适当提高 `VLM_GPU_UTIL`；若运行请求时 CUDA OOM，则降低 `VLM_MAX_LEN`、图片数或并发数。12 GiB 显卡同时运行 vLLM 与 YOLO 时，建议使用较小的 YOLO 模型并监控剩余显存。
 
 ### 步骤 5 — 准备 YOLO 权重
 
@@ -225,7 +227,9 @@ sudo systemctl start vlm-server vlm-web
 | 问题 | 检查 |
 |------|------|
 | `nvidia-smi` 无输出 | 驱动未安装或与内核不匹配 |
-| vLLM 启动 OOM | 降低 `VLM_GPU_UTIL` 或 `VLM_MAX_LEN`，关闭其他 GPU 进程 |
+| vLLM 报 `No available memory for the cache blocks` | 提高 `VLM_GPU_UTIL`；同时降低 `VLM_MAX_LEN`，并关闭其他 GPU 进程 |
+| vLLM 启动长时间停在 CUDA Graph profiling | 保持 `VLM_ENFORCE_EAGER=1`；若设为 `0`，首次编译可能持续数分钟 |
+| vLLM 处理请求时 CUDA OOM | 降低 `VLM_MAX_LEN`、图片数或并发数，关闭其他 GPU 进程 |
 | vLLM 找不到 CUDA | 确认 `nvcc --version` 版本，确认 venv 内 vllm 与 CUDA 匹配 |
 | Web 启动报找不到模块 | 确认 `VLMP_ENV` 指向正确 venv，venv 内已安装 Flask/OpenCV 等 |
 | YOLO 加载失败 | 确认 `.pt` 文件路径正确，Ultralytics 版本兼容 |

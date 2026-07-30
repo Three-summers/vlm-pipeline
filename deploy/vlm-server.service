@@ -18,12 +18,14 @@ Environment=PATH=<PROJECT_ROOT>/.venv-vllm/bin:/usr/local/cuda/bin:/opt/cuda/bin
 Environment=VLMP_ROOT=<PROJECT_ROOT>
 Environment=VLM_MODEL_DIR=<PROJECT_ROOT>/models/Qwen2.5-VL-7B-Instruct-AWQ
 Environment=VLM_VENV=<PROJECT_ROOT>/.venv-vllm
-Environment=VLM_GPU_UTIL=0.55
-Environment=VLM_MAX_LEN=16384
+Environment=VLM_GPU_UTIL=0.85
+Environment=VLM_MAX_LEN=8192
+Environment=VLM_ENFORCE_EAGER=1
+Environment=VLLM_USE_V2_MODEL_RUNNER=0
 
 ExecStart=<PROJECT_ROOT>/scripts/run-vlm-server.sh 8001
 
-# vLLM 加载 7B AWQ 模型约需 60-90s
+# eager 模式下 vLLM 加载 7B AWQ 模型通常约需 60-90s
 TimeoutStartSec=300
 Restart=on-failure
 RestartSec=15
